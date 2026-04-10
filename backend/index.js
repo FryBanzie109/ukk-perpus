@@ -173,9 +173,69 @@ app.get('/transactions', async (req, res) => {
 app.get('/students', async (req, res) => {
     try {
         // Kita ambil id, nama, username, role. Password jangan dikirim demi keamanan.
-        const [rows] = await db.query('SELECT id, nama_lengkap, username, role FROM users WHERE role = "siswa"');
+        const [rows] = await db.query('SELECT id, nama_lengkap, username, role, kelas, jurusan FROM users WHERE role = "siswa"');
         res.json(rows);
     } catch (err) { res.status(500).json(err); }
+});
+
+// Search & Filter Siswa (berdasarkan nama, kelas, jurusan)
+app.get('/search-students', async (req, res) => {
+    const { q, kelas, jurusan } = req.query;
+    try {
+        let query = 'SELECT id, nama_lengkap, username, role, kelas, jurusan FROM users WHERE role = "siswa"';
+        const params = [];
+
+        // Filter berdasarkan nama/username
+        if (q && q.trim() !== '') {
+            query += ' AND (nama_lengkap LIKE ? OR username LIKE ?)';
+            const searchTerm = `%${q}%`;
+            params.push(searchTerm, searchTerm);
+        }
+
+        // Filter berdasarkan kelas
+        if (kelas && kelas.trim() !== '') {
+            query += ' AND kelas = ?';
+            params.push(kelas);
+        }
+
+        // Filter berdasarkan jurusan
+        if (jurusan && jurusan.trim() !== '') {
+            query += ' AND jurusan = ?';
+            params.push(jurusan);
+        }
+
+        query += ' ORDER BY nama_lengkap ASC';
+
+        const [rows] = await db.query(query, params);
+        res.json(rows);
+    } catch (err) {
+        console.error('Search students error:', err);
+        res.status(500).json({ message: 'Error searching students', error: err.message });
+    }
+});
+
+// Ambil daftar kelas (untuk filter dropdown)
+app.get('/students/get-kelas', async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT DISTINCT kelas FROM users WHERE role = "siswa" AND kelas IS NOT NULL ORDER BY kelas ASC');
+        const kelas = rows.map(r => r.kelas);
+        res.json(kelas);
+    } catch (err) {
+        console.error('Get kelas error:', err);
+        res.status(500).json({ message: 'Error fetching kelas', error: err.message });
+    }
+});
+
+// Ambil daftar jurusan (untuk filter dropdown)
+app.get('/students/get-jurusan', async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT DISTINCT jurusan FROM users WHERE role = "siswa" AND jurusan IS NOT NULL ORDER BY jurusan ASC');
+        const jurusan = rows.map(r => r.jurusan);
+        res.json(jurusan);
+    } catch (err) {
+        console.error('Get jurusan error:', err);
+        res.status(500).json({ message: 'Error fetching jurusan', error: err.message });
+    }
 });
 
 // Tambah Siswa Baru (Register oleh Admin)

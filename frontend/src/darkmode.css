@@ -105,13 +105,25 @@
 }
 
 :root[data-theme="dark"] .table thead {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
 }
 
-:root[data-theme="dark"] .table th {
-  color: var(--text-primary);
-  border-color: var(--border-color);
+:root[data-theme="dark"] .table thead th {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+:root[data-theme="dark"] .table-light thead {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme="dark"] .table-light thead th {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
 }
 
 :root[data-theme="dark"] .table td {

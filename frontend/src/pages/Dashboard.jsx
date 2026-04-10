@@ -18,6 +18,14 @@ export default function Dashboard() {
     const [selectedBook, setSelectedBook] = useState(null);
     const [showBookProfile, setShowBookProfile] = useState(false);
     
+    // Search & Filter Siswa States
+    const [searchSiswa, setSearchSiswa] = useState('');
+    const [filterKelas, setFilterKelas] = useState('');
+    const [filterJurusan, setFilterJurusan] = useState('');
+    const [daftarKelas, setDaftarKelas] = useState([]);
+    const [daftarJurusan, setDaftarJurusan] = useState([]);
+    const [siswaFiltered, setSiswaFiltered] = useState([]);
+    
     // Form States
     const [newBook, setNewBook] = useState({ judul: '', penulis: '', penerbit: '', tahun_terbit: '', stok: '' });
 
@@ -140,6 +148,11 @@ export default function Dashboard() {
         return () => { mounted = false; };
     }, [user]);
 
+    // Update siswaFiltered whenever students data changes
+    useEffect(() => {
+        setSiswaFiltered(students);
+    }, [students]);
+
     // --- LOGIC BUKU ---
     const pinjamBuku = async (bookId) => {
         try {
@@ -230,6 +243,66 @@ export default function Dashboard() {
     };
 
     // --- LOGIC SISWA ---
+    // Load daftar kelas & jurusan saat tab siswa diklik
+    const loadFilterSiswa = async () => {
+        try {
+            const [resKelas, resJurusan] = await Promise.all([
+                axios.get('http://localhost:5000/students/get-kelas'),
+                axios.get('http://localhost:5000/students/get-jurusan')
+            ]);
+            setDaftarKelas(resKelas.data || []);
+            setDaftarJurusan(resJurusan.data || []);
+        } catch (err) {
+            console.error('Error loading filter options:', err);
+        }
+    };
+
+    // Search & Filter Siswa
+    const searchFilterSiswa = async (search = '', kelas = '', jurusan = '') => {
+        try {
+            const params = new URLSearchParams();
+            if (search.trim()) params.append('q', search.trim());
+            if (kelas.trim()) params.append('kelas', kelas.trim());
+            if (jurusan.trim()) params.append('jurusan', jurusan.trim());
+
+            const url = params.toString() 
+                ? `http://localhost:5000/search-students?${params.toString()}`
+                : 'http://localhost:5000/students';
+
+            const res = await axios.get(url);
+            setSiswaFiltered(res.data);
+        } catch (err) {
+            console.error('Search students error:', err);
+            alert('Gagal melakukan pencarian siswa');
+        }
+    };
+
+    // Handle search siswa input change
+    const handleSearchSiswaChange = (value) => {
+        setSearchSiswa(value);
+        searchFilterSiswa(value, filterKelas, filterJurusan);
+    };
+
+    // Handle filter kelas change
+    const handleFilterKelasChange = (value) => {
+        setFilterKelas(value);
+        searchFilterSiswa(searchSiswa, value, filterJurusan);
+    };
+
+    // Handle filter jurusan change
+    const handleFilterJurusanChange = (value) => {
+        setFilterJurusan(value);
+        searchFilterSiswa(searchSiswa, filterKelas, value);
+    };
+
+    // Reset filter siswa
+    const resetFilterSiswa = () => {
+        setSearchSiswa('');
+        setFilterKelas('');
+        setFilterJurusan('');
+        setSiswaFiltered(students);
+    };
+
     const hapusSiswa = async (id) => {
         if(confirm('Hapus akun siswa ini?')) { 
             await axios.delete(`http://localhost:5000/students/${id}`); 
@@ -290,7 +363,11 @@ export default function Dashboard() {
                         <li className="nav-item">
                             <button 
                                 className={`nav-link ${activeTab === 'students' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('students')}
+                                onClick={() => {
+                                    setActiveTab('students');
+                                    loadFilterSiswa();
+                                    setSiswaFiltered(students);
+                                }}
                             >
                                 👨‍🎓 Manajemen Siswa
                             </button>
@@ -495,27 +572,105 @@ export default function Dashboard() {
                         {/* Manajemen Siswa */}
                         {activeTab === 'students' && (
                             <div className="card-body">
-                                <h5 className="card-title mb-4">Daftar Siswa</h5>
-                                {students.length === 0 ? (
+                                <h5 className="card-title mb-4">📚 Manajemen Siswa</h5>
+
+                                {/* Search & Filter Bar */}
+                                <div className="row g-3 mb-4 pb-3" style={{borderBottom: '2px solid #dee2e6'}}>
+                                    {/* Search Input */}
+                                    <div className="col-md-4">
+                                        <label className="form-label fw-bold">🔍 Cari Siswa</label>
+                                        <input 
+                                            id="searchSiswa"
+                                            name="searchSiswa"
+                                            type="text" 
+                                            className="form-control" 
+                                            placeholder="Cari by nama atau username..." 
+                                            value={searchSiswa}
+                                            onChange={(e) => handleSearchSiswaChange(e.target.value)}
+                                        />
+                                    </div>
+
+                                    {/* Filter Kelas */}
+                                    <div className="col-md-3">
+                                        <label className="form-label fw-bold">🎓 Kelas</label>
+                                        <select 
+                                            id="filterKelas"
+                                            name="filterKelas"
+                                            className="form-select"
+                                            value={filterKelas}
+                                            onChange={(e) => handleFilterKelasChange(e.target.value)}
+                                        >
+                                            <option value="">Semua Kelas</option>
+                                            {daftarKelas.map(kelas => (
+                                                <option key={kelas} value={kelas}>{kelas}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Filter Jurusan */}
+                                    <div className="col-md-3">
+                                        <label className="form-label fw-bold">📖 Jurusan</label>
+                                        <select 
+                                            id="filterJurusan"
+                                            name="filterJurusan"
+                                            className="form-select"
+                                            value={filterJurusan}
+                                            onChange={(e) => handleFilterJurusanChange(e.target.value)}
+                                        >
+                                            <option value="">Semua Jurusan</option>
+                                            {daftarJurusan.map(jurusan => (
+                                                <option key={jurusan} value={jurusan}>{jurusan}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Reset Button */}
+                                    <div className="col-md-2 d-flex align-items-end">
+                                        <button 
+                                            onClick={resetFilterSiswa} 
+                                            className="btn btn-outline-secondary w-100"
+                                        >
+                                            🔄 Reset
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Results Count */}
+                                <div className="mb-3">
+                                    <p className="text-muted">
+                                        Menampilkan <strong>{siswaFiltered.length}</strong> siswa
+                                        {(searchSiswa || filterKelas || filterJurusan) && 
+                                            ` (filter aktif)`}
+                                    </p>
+                                </div>
+
+                                {/* Daftar Siswa Table */}
+                                {siswaFiltered.length === 0 ? (
                                     <div className="alert alert-info">
-                                        Belum ada siswa yang terdaftar.
+                                        {students.length === 0 
+                                            ? 'Belum ada siswa yang terdaftar.' 
+                                            : 'Tidak ada siswa yang sesuai dengan filter.'}
                                     </div>
                                 ) : (
                                     <div className="table-responsive">
                                         <table className="table table-hover">
-                                            <thead>
+                                            <thead className="table-light">
                                                 <tr>
                                                     <th>Nama Lengkap</th>
                                                     <th>Username</th>
+                                                    <th>Kelas</th>
+                                                    <th>Jurusan</th>
                                                     <th>Role</th>
                                                     <th>Aksi</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {students.map(s => (
+                                                {siswaFiltered.map(s => (
                                                     <tr key={s.id}>
-                                                        <td><strong>{s.nama_lengkap}</strong></td>
+                                                        <td><strong>{s.nama_lengkap || '-'}</strong></td>
                                                         <td>@{s.username}</td>
+                                                        <td>{s.kelas || '-'}</td>
+                                                        <td>{s.jurusan || '-'}</td>
                                                         <td>
                                                             <span className="badge bg-info">
                                                                 {s.role === 'admin' ? '👨‍💼 Admin' : '👨‍🎓 Siswa'}
@@ -526,7 +681,7 @@ export default function Dashboard() {
                                                                 onClick={() => hapusSiswa(s.id)} 
                                                                 className="btn btn-sm btn-danger"
                                                             >
-                                                                Hapus
+                                                                🗑️ Hapus
                                                             </button>
                                                         </td>
                                                     </tr>
