@@ -1,4 +1,4 @@
-school project. Do not get into it.
+school project. Don't get into it.
 
 
 
