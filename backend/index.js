@@ -173,7 +173,7 @@ app.get('/transactions', async (req, res) => {
 app.get('/students', async (req, res) => {
     try {
         // Kita ambil id, nama, username, role. Password jangan dikirim demi keamanan.
-        const [rows] = await db.query('SELECT id, nama_lengkap, username, role, kelas, jurusan FROM users WHERE role = "siswa"');
+        const [rows] = await db.query('SELECT id, nama_lengkap, username, role, kelas, jurusan, foto_profil FROM users WHERE role = "siswa"');
         res.json(rows);
     } catch (err) { res.status(500).json(err); }
 });
@@ -182,7 +182,7 @@ app.get('/students', async (req, res) => {
 app.get('/search-students', async (req, res) => {
     const { q, kelas, jurusan } = req.query;
     try {
-        let query = 'SELECT id, nama_lengkap, username, role, kelas, jurusan FROM users WHERE role = "siswa"';
+        let query = 'SELECT id, nama_lengkap, username, role, kelas, jurusan, foto_profil FROM users WHERE role = "siswa"';
         const params = [];
 
         // Filter berdasarkan nama/username
@@ -262,6 +262,17 @@ app.get('/my-borrowed-books/:userId', async (req, res) => {
     try {
         const [rows] = await db.query(
             'SELECT t.id, b.id as book_id, b.judul, b.penulis, t.tanggal_pinjam, t.status FROM transactions t JOIN books b ON t.book_id = b.id WHERE t.user_id = ? AND t.status = "dipinjam" ORDER BY t.tanggal_pinjam DESC',
+            [req.params.userId]
+        );
+        res.json(rows);
+    } catch (err) { res.status(500).json(err); }
+});
+
+// Ambil Semua Riwayat Peminjaman Siswa (untuk Admin)
+app.get('/student-borrowed-books/:userId', async (req, res) => {
+    try {
+        const [rows] = await db.query(
+            'SELECT t.id, b.id as book_id, b.judul, b.penulis, t.tanggal_pinjam, t.tanggal_kembali, t.status, t.denda, u.foto_profil FROM transactions t JOIN books b ON t.book_id = b.id JOIN users u ON t.user_id = u.id WHERE t.user_id = ? ORDER BY t.tanggal_pinjam DESC',
             [req.params.userId]
         );
         res.json(rows);

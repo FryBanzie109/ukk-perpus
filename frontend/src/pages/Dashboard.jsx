@@ -26,6 +26,11 @@ export default function Dashboard() {
     const [daftarJurusan, setDaftarJurusan] = useState([]);
     const [siswaFiltered, setSiswaFiltered] = useState([]);
     
+    // Student Profile Modal States
+    const [selectedStudent, setSelectedStudent] = useState(null);
+    const [showStudentProfile, setShowStudentProfile] = useState(false);
+    const [studentBorrowedBooks, setStudentBorrowedBooks] = useState([]);
+    
     // Form States
     const [newBook, setNewBook] = useState({ judul: '', penulis: '', penerbit: '', tahun_terbit: '', stok: '' });
 
@@ -308,6 +313,19 @@ export default function Dashboard() {
             await axios.delete(`http://localhost:5000/students/${id}`); 
             fetchData(); 
         }
+    };
+
+    // View Student Profile with Borrowed Books
+    const viewStudentProfile = async (student) => {
+        setSelectedStudent(student);
+        try {
+            const res = await axios.get(`http://localhost:5000/student-borrowed-books/${student.id}`);
+            setStudentBorrowedBooks(res.data);
+        } catch (err) {
+            console.error('Error fetching student borrowed books:', err);
+            setStudentBorrowedBooks([]);
+        }
+        setShowStudentProfile(true);
     };
 
     const logout = () => { 
@@ -667,7 +685,29 @@ export default function Dashboard() {
                                             <tbody>
                                                 {siswaFiltered.map(s => (
                                                     <tr key={s.id}>
-                                                        <td><strong>{s.nama_lengkap || '-'}</strong></td>
+                                                        <td>
+                                                            <div className="d-flex align-items-center gap-2">
+                                                                <div style={{
+                                                                    width: '40px',
+                                                                    height: '40px',
+                                                                    borderRadius: '50%',
+                                                                    backgroundColor: '#f0f0f0',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    overflow: 'hidden',
+                                                                    flexShrink: 0,
+                                                                    border: '2px solid #dee2e6'
+                                                                }}>
+                                                                    {s.foto_profil ? (
+                                                                        <img src={s.foto_profil} alt={s.nama_lengkap} style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+                                                                    ) : (
+                                                                        <span style={{fontSize: '18px'}}>👤</span>
+                                                                    )}
+                                                                </div>
+                                                                <strong>{s.nama_lengkap || '-'}</strong>
+                                                            </div>
+                                                        </td>
                                                         <td>@{s.username}</td>
                                                         <td>{s.kelas || '-'}</td>
                                                         <td>{s.jurusan || '-'}</td>
@@ -677,6 +717,12 @@ export default function Dashboard() {
                                                             </span>
                                                         </td>
                                                         <td>
+                                                            <button 
+                                                                onClick={() => viewStudentProfile(s)} 
+                                                                className="btn btn-sm btn-info me-2"
+                                                            >
+                                                                👁️ Lihat Profil
+                                                            </button>
                                                             <button 
                                                                 onClick={() => hapusSiswa(s.id)} 
                                                                 className="btn btn-sm btn-danger"
@@ -845,6 +891,129 @@ export default function Dashboard() {
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Student Profile Modal */}
+            {showStudentProfile && selectedStudent && (
+                <div className="modal d-block" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.6)'}}>
+                    <div className="modal-dialog modal-lg">
+                        <div className="modal-content">
+                            <div className="modal-header bg-primary text-white">
+                                <h5 className="modal-title">👤 Profil Siswa</h5>
+                                <button 
+                                    type="button" 
+                                    className="btn-close btn-close-white" 
+                                    onClick={() => setShowStudentProfile(false)}
+                                ></button>
+                            </div>
+                            <div className="modal-body">
+                                {/* Student Info */}
+                                <div className="mb-4 pb-3" style={{borderBottom: '2px solid #dee2e6'}}>
+                                    <div className="row">
+                                        <div className="col-md-3 text-center mb-3 mb-md-0">
+                                            <div style={{
+                                                width: '120px',
+                                                height: '120px',
+                                                borderRadius: '50%',
+                                                backgroundColor: '#f0f0f0',
+                                                margin: '0 auto',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                overflow: 'hidden',
+                                                border: '4px solid #0d6efd'
+                                            }}>
+                                                {selectedStudent.foto_profil ? (
+                                                    <img src={selectedStudent.foto_profil} alt={selectedStudent.nama_lengkap} style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+                                                ) : (
+                                                    <span style={{fontSize: '48px'}}>👤</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="col-md-9">
+                                            <div className="mb-3">
+                                                <h6 className="text-muted mb-2">Nama Lengkap</h6>
+                                                <p className="fs-5"><strong>{selectedStudent.nama_lengkap}</strong></p>
+                                            </div>
+                                            <div className="mb-3">
+                                                <h6 className="text-muted mb-2">Username</h6>
+                                                <p className="fs-5"><code>@{selectedStudent.username}</code></p>
+                                            </div>
+                                            <div className="row">
+                                                <div className="col-md-6">
+                                                    <h6 className="text-muted mb-2">Kelas</h6>
+                                                    <p className="fs-5">{selectedStudent.kelas || '-'}</p>
+                                                </div>
+                                                <div className="col-md-6">
+                                                    <h6 className="text-muted mb-2">Jurusan</h6>
+                                                    <p className="fs-5">{selectedStudent.jurusan || '-'}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Borrowed Books Section */}
+                                <h6 className="text-muted mb-3">📚 Riwayat Peminjaman Buku</h6>
+                                {studentBorrowedBooks.length === 0 ? (
+                                    <div className="alert alert-info mb-0">
+                                        Siswa ini belum pernah meminjam buku.
+                                    </div>
+                                ) : (
+                                    <div className="table-responsive">
+                                        <table className="table table-sm table-hover">
+                                            <thead className="table-light">
+                                                <tr>
+                                                    <th>Judul Buku</th>
+                                                    <th>Penulis</th>
+                                                    <th>Tanggal Pinjam</th>
+                                                    <th>Tanggal Kembali</th>
+                                                    <th>Status</th>
+                                                    <th>Denda</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {studentBorrowedBooks.map(book => (
+                                                    <tr key={book.id}>
+                                                        <td><strong>{book.judul}</strong></td>
+                                                        <td>{book.penulis}</td>
+                                                        <td>
+                                                            <span className="badge bg-secondary">
+                                                                {new Date(book.tanggal_pinjam).toLocaleDateString('id-ID')}
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            {book.tanggal_kembali ? (
+                                                                new Date(book.tanggal_kembali).toLocaleDateString('id-ID')
+                                                            ) : (
+                                                                <span className="text-muted">-</span>
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            <span className={`badge ${book.status === 'dipinjam' ? 'bg-danger' : 'bg-success'}`}>
+                                                                {book.status === 'dipinjam' ? '📤 Dipinjam' : '📥 Dikembalikan'}
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            {book.denda && book.denda > 0 ? (
+                                                                <span className="text-danger fw-bold">Rp {book.denda.toLocaleString('id-ID')}</span>
+                                                            ) : (
+                                                                <span className="text-success">-</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-secondary" onClick={() => setShowStudentProfile(false)}>Tutup</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
 
