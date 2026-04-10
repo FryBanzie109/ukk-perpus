@@ -1,3 +1,7 @@
+school project. Do not get into it.
+
+
+
 # 📚 UKK Perpustakaan - Aplikasi Manajemen Perpustakaan
 
 Aplikasi web full-stack untuk manajemen perpustakaan yang memungkinkan admin mengelola buku, peminjaman, dan profil siswa secara terintegrasi.
