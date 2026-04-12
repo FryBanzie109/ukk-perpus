@@ -83,8 +83,8 @@ export default function Dashboard() {
                 const resStudents = await axios.get('http://localhost:5000/students');
                 setStudents(resStudents.data);
 
-                // Fetch pending returns untuk admin
-                const resPendingReturns = await axios.get('http://localhost:5000/pending-returns');
+                // Fetch pending returns untuk admin (pass user_id untuk validasi role)
+                const resPendingReturns = await axios.get(`http://localhost:5000/pending-returns?user_id=${user.id}`);
                 setPendingReturns(resPendingReturns.data);
             }
 
@@ -207,31 +207,21 @@ export default function Dashboard() {
         } catch (err) { alert(err.response?.data?.message); }
     };
 
-    // Request pengembalian buku (user)
+    // Request pengembalian buku (DEPRECATED - hanya admin yang bisa handle return sekarang)
     const requestReturnBook = async (transaction) => {
-        if (window.confirm(`Anda yakin ingin mengembalikan buku "${transaction.judul}"?`)) {
-            try {
-                await axios.post('http://localhost:5000/return-request', {
-                    transaction_id: transaction.id,
-                    book_id: transaction.book_id,
-                    user_id: user.id
-                });
-                alert('Permintaan pengembalian dikirim. Menunggu konfirmasi admin.');
-                fetchData();
-            } catch (err) {
-                alert('Error: ' + (err.response?.data?.message || err.message));
-            }
-        }
+        alert('⛔ Akses Ditolak: Hanya admin yang dapat memproses pengembalian buku. Silakan hubungi admin perpustakaan.');
     };
 
     // Ambil daftar permintaan pengembalian (admin)
     const fetchPendingReturns = async () => {
         try {
             setPendingReturnsLoading(true);
-            const res = await axios.get('http://localhost:5000/pending-returns');
+            // Pass user_id untuk validasi admin role
+            const res = await axios.get(`http://localhost:5000/pending-returns?user_id=${user.id}`);
             setPendingReturns(res.data);
         } catch (err) {
             console.error('Error fetching pending returns:', err);
+            alert('Error: ' + (err.response?.data?.message || err.message));
         } finally {
             setPendingReturnsLoading(false);
         }
@@ -241,7 +231,10 @@ export default function Dashboard() {
     const confirmReturnBook = async (transaction) => {
         if (window.confirm(`Konfirmasi pengembalian buku "${transaction.judul}" dari ${transaction.nama_lengkap}?`)) {
             try {
-                const res = await axios.post(`http://localhost:5000/confirm-return/${transaction.id}`);
+                // Pass user_id untuk validasi admin role
+                const res = await axios.post(`http://localhost:5000/confirm-return/${transaction.id}`, {
+                    user_id: user.id
+                });
                 alert(`Pengembalian dikonfirmasi.\n${res.data.keterangan}`);
                 fetchPendingReturns();
                 fetchData();
@@ -335,7 +328,12 @@ export default function Dashboard() {
     const kembalikanBuku = async (transId, bookId) => {
         if(confirm('Kembalikan buku ini?')) { 
             try {
-                const res = await axios.post('http://localhost:5000/return', { transaction_id: transId, book_id: bookId });
+                // Pass user_id untuk validasi admin role
+                const res = await axios.post('http://localhost:5000/return', { 
+                    transaction_id: transId, 
+                    book_id: bookId,
+                    user_id: user.id
+                });
                 const denda = res.data.denda;
                 const keterangan = res.data.keterangan;
                 
@@ -2006,13 +2004,7 @@ export default function Dashboard() {
                                                             </span>
                                                         </td>
                                                         <td>
-                                                            <button 
-                                                                onClick={() => requestReturnBook(b)}
-                                                                className="btn btn-sm btn-warning"
-                                                                title="Ajukan permintaan pengembalian ke admin"
-                                                            >
-                                                                🔄 Kembalikan
-                                                            </button>
+                                                            <span className="text-muted">📞 Hubungi admin untuk pengembalian</span>
                                                         </td>
                                                     </tr>
                                                 ))}
