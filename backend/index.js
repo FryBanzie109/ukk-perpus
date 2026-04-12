@@ -179,9 +179,10 @@ function mapOpenLibSubjectToGenre(subject) {
     return null; // No match found
 }
 
-// Helper function to get the best genre ID from Open Library data
+// Helper function to get the best genre ID and NAME from Open Library data
 async function getBestGenreIdFromOpenLib(doc, db) {
     let genreId = null; // Will default to 'Uncategorized' if null
+    let genreName = 'Uncategorized'; // Default genre name
     let foundGenres = [];
     
     const bookTitle = doc.title || 'Unknown';
@@ -214,6 +215,7 @@ async function getBestGenreIdFromOpenLib(doc, db) {
     // If we found mapped genres, use the first one
     if (foundGenres.length > 0) {
         const selectedGenre = foundGenres[0].mapped;
+        genreName = selectedGenre; // Set genre name
         console.log(`  🎯 Selected genre: "${selectedGenre}"`);
         
         // Get the genre_id from database
@@ -230,7 +232,7 @@ async function getBestGenreIdFromOpenLib(doc, db) {
         console.log(`  ⚠️ No matching genres found, will use Uncategorized`);
     }
     
-    return genreId; // Returns null if not found, which will default to 'Uncategorized'
+    return { id: genreId, nama: genreName }; // Returns object with both ID and name
 }
 
 // Simplified function to get genre name from Open Library (for search results)
@@ -726,30 +728,36 @@ app.post('/books/import-openlib', async (req, res) => {
 
         console.log('🔄 Determining genre...');
         
-        // Get best genre_id from Open Library data if available
+        // Get best genre_id and name from Open Library data if available
         let genreId = null;
+        let genreName = 'Uncategorized';
+        
         if (openLibData) {
-            genreId = await getBestGenreIdFromOpenLib(openLibData, db);
+            const genreResult = await getBestGenreIdFromOpenLib(openLibData, db);
+            genreId = genreResult.id;
+            genreName = genreResult.nama;
         }
         
-        // If no genre found, use 'Uncategorized' (genre_id will be null and use default constraint)
+        // If no genre found, query for Uncategorized
         if (genreId === null) {
             const [uncatGenre] = await db.query('SELECT id FROM genres WHERE nama = "Uncategorized"');
             genreId = uncatGenre[0]?.id || null;
+            genreName = 'Uncategorized';
         }
         
-        console.log(`🔄 Inserting book with genre_id: ${genreId}...`);
+        console.log(`🔄 Inserting book with genre: "${genreName}" (ID: ${genreId})...`);
         
-        // Insert buku baru dengan cover_url dan genre_id
+        // Insert buku baru dengan cover_url, kategori, dan genre_id
         const insertResult = await db.query(
             'INSERT INTO books (judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url, genre_id) VALUES (?,?,?,?,?,?,?,?)',
-            [title, author, publisher || null, 'Diimpor dari Open Library', year || null, 1, cover_url || null, genreId]
+            [title, author, publisher || null, genreName, year || null, 1, cover_url || null, genreId]
         );
 
-        console.log('✅ Book imported successfully with genre_id:', genreId);
+        console.log('✅ Book imported successfully with genre:', genreName);
         res.json({ 
             message: 'Buku berhasil diimport dari Open Library',
             genreId: genreId,
+            genreName: genreName,
             bookId: insertResult[0].insertId
         });
     } catch (err) {
