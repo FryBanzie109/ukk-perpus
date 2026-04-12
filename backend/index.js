@@ -69,96 +69,255 @@ app.get('/books/get-kategori', async (req, res) => {
     }
 });
 
-// Genre mapping: Map Open Library subjects to local genres
-const GENRE_MAPPING = {
-    // Fiction genres
-    'fiction': 'Fiksi',
-    'novel': 'Fiksi',
-    'novels': 'Fiksi',
-    'literature': 'Puisi & Sastra',
-    'science fiction': 'Fiksi',
-    'fantasy': 'Fiksi',
-    'mystery': 'Misteri',
-    'detective': 'Misteri',
-    'thriller': 'Misteri',
-    'romance': 'Romantis',
-    'love stories': 'Romantis',
-    'drama': 'Fiksi',
-    'historical fiction': 'Fiksi',
+// Category mapping: Map Open Library data to physical book types
+const CATEGORY_MAPPING = {
+    // Physical book types identification
+    'comic': 'Komik',
+    'comics': 'Komik',
+    'comic books': 'Komik',
+    'manga': 'Komik',
+    'graphic novel': 'Komik',
     
-    // Non-fiction genres
-    'non-fiction': 'Non-Fiksi',
-    'history': 'Sejarah',
-    'historical': 'Sejarah',
+    'magazine': 'Majalah',
+    'magazines': 'Majalah',
+    'journal': 'Jurnal',
+    'journals': 'Jurnal',
+    'periodical': 'Majalah',
+    
     'biography': 'Biografi',
     'autobiography': 'Biografi',
     'memoir': 'Biografi',
+    'biographical': 'Biografi',
+    'life story': 'Biografi',
     
-    // Science & Technology
-    'science': 'Sains & Teknologi',
-    'technology': 'Sains & Teknologi',
-    'physics': 'Sains & Teknologi',
-    'chemistry': 'Sains & Teknologi',
-    'mathematics': 'Sains & Teknologi',
-    'biology': 'Sains & Teknologi',
-    'engineering': 'Sains & Teknologi',
-    'programming': 'Sains & Teknologi',
-    'computer science': 'Sains & Teknologi',
-    
-    // Religion & Spirituality
-    'religion': 'Agama',
-    'spirituality': 'Agama',
-    'christianity': 'Agama',
-    'islam': 'Agama',
-    'buddhism': 'Agama',
-    'philosophy': 'Agama',
-    
-    // Psychology & Self-Help
-    'psychology': 'Psikologi',
-    'self-help': 'Self-Help',
-    'self improvement': 'Self-Help',
-    'health': 'Self-Help',
-    'wellness': 'Self-Help',
-    'personal development': 'Self-Help',
-    'motivation': 'Self-Help',
-    
-    // Cooking & Food
-    'cooking': 'Kuliner',
-    'recipes': 'Kuliner',
-    'food': 'Kuliner',
-    
-    // Travel
-    'travel': 'Perjalanan',
-    'adventure': 'Perjalanan',
-    
-    // Art & Design
-    'art': 'Seni & Desain',
-    'design': 'Seni & Desain',
-    'architecture': 'Seni & Desain',
-    'painting': 'Seni & Desain',
-    
-    // Poetry & Literature
     'poetry': 'Puisi & Sastra',
     'poems': 'Puisi & Sastra',
     'short stories': 'Puisi & Sastra',
     'drama': 'Puisi & Sastra',
     'plays': 'Puisi & Sastra',
+    'literature': 'Puisi & Sastra',
     
-    // Education
-    'education': 'Pendidikan',
+    'reference': 'Referensi',
+    'encyclopedia': 'Referensi',
+    'dictionary': 'Referensi',
     'textbook': 'Pendidikan',
-    'reference': 'Pendidikan',
+    'education': 'Pendidikan',
+    'tutorial': 'Pendidikan',
+    'guide': 'Panduan & Manual',
+    'manual': 'Panduan & Manual',
+    'handbook': 'Panduan & Manual',
     
-    // Children & Comics
-    'children': 'Anak-anak',
-    'juvenile': 'Anak-anak',
-    'comics': 'Komik',
-    'comic books': 'Komik',
-    'manga': 'Komik',
-    'animation': 'Komik'
+    'art': 'Seni & Fotografi',
+    'design': 'Seni & Fotografi',
+    'photography': 'Seni & Fotografi',
+    'architecture': 'Seni & Fotografi',
+    'painting': 'Seni & Fotografi',
+    'illustration': 'Seni & Fotografi'
 };
 
-// Helper function to map Open Library subject to local genre
+// Genre mapping: Map Open Library subjects to story THEMES (not physical types)
+const GENRE_MAPPING = {
+    // Horror/Dark themes
+    'horror': 'Horor',
+    'scary': 'Horor',
+    'paranormal': 'Horor',
+    'supernatural': 'Horor',
+    'ghost': 'Horor',
+    'vampire': 'Horor',
+    'werewolf': 'Horor',
+    'dark': 'Horor',
+    
+    // Romance themes
+    'romance': 'Romance',
+    'love': 'Romance',
+    'romantic': 'Romance',
+    'love stories': 'Romance',
+    'relationship': 'Romance',
+    
+    // Science Fiction themes
+    'science fiction': 'Sci-Fi',
+    'sci-fi': 'Sci-Fi',
+    'sci fi': 'Sci-Fi',
+    'futuristic': 'Sci-Fi',
+    'space': 'Sci-Fi',
+    'cyberpunk': 'Sci-Fi',
+    'dystopian': 'Sci-Fi',
+    'utopian': 'Sci-Fi',
+    'alien': 'Sci-Fi',
+    'robot': 'Sci-Fi',
+    
+    // Fantasy themes
+    'fantasy': 'Fantasi',
+    'magical': 'Fantasi',
+    'magic': 'Fantasi',
+    'wizard': 'Fantasi',
+    'witch': 'Fantasi',
+    'dragon': 'Fantasi',
+    'elf': 'Fantasi',
+    'quest': 'Fantasi',
+    'epic fantasy': 'Fantasi',
+    'dark fantasy': 'Dark Fantasy',
+    'sword and sorcery': 'Fantasi',
+    
+    // Mystery/Thriller themes
+    'mystery': 'Misteri',
+    'detective': 'Misteri',
+    'crime': 'Misteri',
+    'detective fiction': 'Misteri',
+    'murder': 'Misteri',
+    'thriller': 'Thriller',
+    'suspense': 'Thriller',
+    'action': 'Thriller',
+    'spy': 'Thriller',
+    'adventure': 'Petualangan',
+    'adventure fiction': 'Petualangan',
+    'exploration': 'Petualangan',
+    
+    // Drama themes
+    'drama': 'Drama',
+    'emotional': 'Drama',
+    'family saga': 'Drama',
+    'coming of age': 'Drama',
+    
+    // Comedy themes
+    'comedy': 'Komedi',
+    'humor': 'Komedi',
+    'humorous': 'Komedi',
+    'funny': 'Komedi',
+    'satirical': 'Komedi',
+    'satire': 'Komedi',
+    
+    // Historical theme
+    'historical fiction': 'Historical Fiction',
+    'historical': 'Historical Fiction',
+    'history': 'Historical Fiction',
+    
+    // Educational/Non-fiction themes
+    'science': 'Sains & Teknologi',
+    'technology': 'Sains & Teknologi',
+    'physics': 'Sains & Teknologi',
+    'chemistry': 'Sains & Teknologi',
+    'biology': 'Sains & Teknologi',
+    'mathematics': 'Sains & Teknologi',
+    'engineering': 'Sains & Teknologi',
+    'programming': 'Sains & Teknologi',
+    'computer science': 'Sains & Teknologi',
+    
+    'psychology': 'Psikologi',
+    'philosophy': 'Filosofi',
+    'spirituality': 'Filosofi',
+    'religion': 'Filosofi',
+    
+    'business': 'Bisnis & Ekonomi',
+    'economics': 'Bisnis & Ekonomi',
+    'finance': 'Bisnis & Ekonomi',
+    'entrepreneurship': 'Bisnis & Ekonomi',
+    'self-help': 'Self-Help',
+    'self improvement': 'Self-Help',
+    'personal development': 'Self-Help',
+    'motivation': 'Self-Help',
+    'wellness': 'Self-Help',
+    'health': 'Kesehatan & Wellness',
+    'fitness': 'Kesehatan & Wellness',
+    'diet': 'Kesehatan & Wellness',
+    'nutrition': 'Kesehatan & Wellness',
+    'cooking': 'Kuliner',
+    'recipes': 'Kuliner',
+    'food': 'Kuliner',
+    'culinary': 'Kuliner',
+    
+    'travel': 'Perjalanan',
+    'adventure': 'Petualangan',
+    
+    // Children
+    'children': 'Anak-anak',
+    'children\'s': 'Anak-anak',
+    'kids': 'Anak-anak',
+    'juvenile': 'Anak-anak',
+    'young adult': 'Anak-anak'
+};
+
+
+// Helper function to map Open Library subject to CATEGORY (physical book type)
+function mapOpenLibSubjectToCategory(subject) {
+    if (!subject) return null;
+    
+    const lowerSubject = subject.toLowerCase().trim();
+    
+    // Direct match
+    if (CATEGORY_MAPPING[lowerSubject]) {
+        return CATEGORY_MAPPING[lowerSubject];
+    }
+    
+    // Partial match - check if any mapping keyword is contained in the subject
+    for (const [key, category] of Object.entries(CATEGORY_MAPPING)) {
+        if (lowerSubject.includes(key)) {
+            return category;
+        }
+    }
+    
+    return null; // No match found
+}
+
+// Helper function to get the best CATEGORY ID from Open Library data
+async function getBestCategoryIdFromOpenLib(doc, db) {
+    let categoryId = null;
+    let categoryName = 'Lainnya'; // Default category name
+    let foundCategories = [];
+    
+    const bookTitle = doc.title || 'Unknown';
+    console.log(`\n📦 Determining category (physical type) for: "${bookTitle}"`);
+    
+    // Try subject_facets first
+    if (doc.subject_facets && Array.isArray(doc.subject_facets) && doc.subject_facets.length > 0) {
+        for (const subject of doc.subject_facets) {
+            const mappedCategory = mapOpenLibSubjectToCategory(subject);
+            if (mappedCategory && !foundCategories.includes(mappedCategory)) {
+                foundCategories.push(mappedCategory);
+                console.log(`  📦 Subject "${subject}" → Category "${mappedCategory}"`);
+            }
+        }
+    }
+    
+    // Try subject field
+    if (foundCategories.length === 0 && doc.subject && Array.isArray(doc.subject)) {
+        for (const subject of doc.subject) {
+            const mappedCategory = mapOpenLibSubjectToCategory(subject);
+            if (mappedCategory && !foundCategories.includes(mappedCategory)) {
+                foundCategories.push(mappedCategory);
+                console.log(`  📦 Subject "${subject}" → Category "${mappedCategory}"`);
+            }
+        }
+    }
+    
+    // Use first found category
+    if (foundCategories.length > 0) {
+        categoryName = foundCategories[0];
+        console.log(`  🎯 Selected category: "${categoryName}"`);
+        
+        try {
+            const [rows] = await db.query('SELECT id FROM categories WHERE nama = ?', [categoryName]);
+            if (rows.length > 0) {
+                categoryId = rows[0].id;
+                console.log(`  🔗 Category ID: ${categoryId}`);
+            }
+        } catch (err) {
+            console.error(`  ⚠️ Error fetching category ID: ${err.message}`);
+        }
+    }
+    
+    // Fallback to 'Lainnya' if no specific category found
+    if (categoryId === null) {
+        console.log(`  ⚠️ No specific category found, using Lainnya`);
+        const [lainnyaCategory] = await db.query('SELECT id FROM categories WHERE nama = "Lainnya"');
+        categoryId = lainnyaCategory[0]?.id || 12;
+        categoryName = 'Lainnya';
+    }
+    
+    return { id: categoryId, nama: categoryName };
+}
+
+// Helper function to map Open Library subject to local GENRE (story theme)
 function mapOpenLibSubjectToGenre(subject) {
     if (!subject) return null;
     
@@ -179,14 +338,14 @@ function mapOpenLibSubjectToGenre(subject) {
     return null; // No match found
 }
 
-// Helper function to get the best genre ID and NAME from Open Library data
+// Helper function to get the best GENRE ID (story theme) from Open Library data
 async function getBestGenreIdFromOpenLib(doc, db) {
-    let genreId = null; // Will default to 'Uncategorized' if null
-    let genreName = 'Uncategorized'; // Default genre name
+    let genreId = null;
+    let genreName = 'Lainnya'; // Default genre name
     let foundGenres = [];
     
     const bookTitle = doc.title || 'Unknown';
-    console.log(`\n🔍 Extracting genres for: "${bookTitle}"`);
+    console.log(`\n🎭 Extracting genres (story themes) for: "${bookTitle}"`);
     
     // Try subject_facets first (most reliable)
     if (doc.subject_facets && Array.isArray(doc.subject_facets) && doc.subject_facets.length > 0) {
@@ -726,39 +885,54 @@ app.post('/books/import-openlib', async (req, res) => {
             return res.status(400).json({ message: 'Buku sudah ada di database' });
         }
 
-        console.log('🔄 Determining genre...');
-        
-        // Get best genre_id and name from Open Library data if available
+        // Determine CATEGORY (physical type) and GENRE (story theme)
+        let categoryId = null;
+        let categoryName = 'Lainnya';
         let genreId = null;
-        let genreName = 'Uncategorized';
+        let genreName = 'Lainnya';
         
         if (openLibData) {
+            // Get category (physical book type)
+            const categoryResult = await getBestCategoryIdFromOpenLib(openLibData, db);
+            categoryId = categoryResult.id;
+            categoryName = categoryResult.nama;
+            
+            // Get genre (story theme)
             const genreResult = await getBestGenreIdFromOpenLib(openLibData, db);
             genreId = genreResult.id;
             genreName = genreResult.nama;
+        } else {
+            // Fallback if no OpenLib data provided
+            const [lainnyaCat] = await db.query('SELECT id FROM categories WHERE nama = "Lainnya"');
+            categoryId = lainnyaCat[0]?.id || 12;
+            categoryName = 'Lainnya';
+            
+            const [lainnyaGenre] = await db.query('SELECT id FROM genres WHERE nama = "Lainnya"');
+            genreId = lainnyaGenre[0]?.id || 23;
+            genreName = 'Lainnya';
         }
         
-        // If no genre found, query for Uncategorized
-        if (genreId === null) {
-            const [uncatGenre] = await db.query('SELECT id FROM genres WHERE nama = "Uncategorized"');
-            genreId = uncatGenre[0]?.id || null;
-            genreName = 'Uncategorized';
-        }
+        console.log(`\n✅ Classification complete:`);
+        console.log(`  📦 Category: "${categoryName}" (ID: ${categoryId})`);
+        console.log(`  🎭 Genre: "${genreName}" (ID: ${genreId})`);
         
-        console.log(`🔄 Inserting book with genre: "${genreName}" (ID: ${genreId})...`);
-        
-        // Insert buku baru dengan cover_url, kategori, dan genre_id
+        // Insert buku with BOTH category_id and genre_id
         const insertResult = await db.query(
-            'INSERT INTO books (judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url, genre_id) VALUES (?,?,?,?,?,?,?,?)',
-            [title, author, publisher || null, genreName, year || null, 1, cover_url || null, genreId]
+            'INSERT INTO books (judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url, category_id, genre_id) VALUES (?,?,?,?,?,?,?,?,?)',
+            [title, author, publisher || null, categoryName, year || null, 1, cover_url || null, categoryId, genreId]
         );
 
-        console.log('✅ Book imported successfully with genre:', genreName);
+        console.log('✅ Book imported successfully!');
         res.json({ 
             message: 'Buku berhasil diimport dari Open Library',
-            genreId: genreId,
-            genreName: genreName,
-            bookId: insertResult[0].insertId
+            book: {
+                id: insertResult[0].insertId,
+                title: title,
+                categoryId: categoryId,
+                categoryName: categoryName,
+                genreId: genreId,
+                genreName: genreName
+            }
         });
     } catch (err) {
         console.error('❌ Import error:', err);
