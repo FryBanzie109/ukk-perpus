@@ -423,19 +423,15 @@ export default function Dashboard() {
     };
 
     // --- LOGIC SISWA ---
-    // Load daftar kelas & jurusan saat tab siswa diklik
-    const loadFilterSiswa = async () => {
-        try {
-            const [resKelas, resJurusan] = await Promise.all([
-                axios.get('http://localhost:5000/students/get-kelas'),
-                axios.get('http://localhost:5000/students/get-jurusan')
-            ]);
-            setDaftarKelas(resKelas.data || []);
-            setDaftarJurusan(resJurusan.data || []);
-        } catch (err) {
-            console.error('Error loading filter options:', err);
-        }
-    };
+    // Hardcoded daftar kelas & jurusan
+    const DAFTAR_KELAS = ['X', 'XI', 'XII'];
+    const DAFTAR_JURUSAN = ['PPLG', 'AKL', 'TJKT', 'MPLB', 'DKV'];
+
+    // Initialize daftar kelas & jurusan dengan nilai hardcoded
+    useEffect(() => {
+        setDaftarKelas(DAFTAR_KELAS);
+        setDaftarJurusan(DAFTAR_JURUSAN);
+    }, []);
 
     // Search & Filter Siswa
     const searchFilterSiswa = async (search = '', kelas = '', jurusan = '') => {
@@ -737,7 +733,6 @@ export default function Dashboard() {
                                 className={`nav-link ${activeTab === 'students' ? 'active' : ''}`}
                                 onClick={() => {
                                     setActiveTab('students');
-                                    loadFilterSiswa();
                                     setSiswaFiltered(students);
                                 }}
                             >
