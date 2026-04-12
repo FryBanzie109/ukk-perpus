@@ -1989,7 +1989,6 @@ export default function Dashboard() {
                                                     <th>Penulis</th>
                                                     <th>Tanggal Pinjam</th>
                                                     <th>Status</th>
-                                                    <th>Aksi</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -2002,9 +2001,6 @@ export default function Dashboard() {
                                                             <span className="badge bg-danger">
                                                                 📤 Sedang Dipinjam
                                                             </span>
-                                                        </td>
-                                                        <td>
-                                                            <span className="text-muted">📞 Hubungi admin untuk pengembalian</span>
                                                         </td>
                                                     </tr>
                                                 ))}
