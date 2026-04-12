@@ -3,6 +3,10 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 export default function Profile() {
+    // Hardcoded lists untuk kelas dan jurusan
+    const DAFTAR_KELAS = ['X', 'XI', 'XII'];
+    const DAFTAR_JURUSAN = ['PPLG', 'AKL', 'TJKT', 'MPLB', 'DKV'];
+
     const [user, setUser] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState({
@@ -283,27 +287,33 @@ export default function Profile() {
                                     {user.role === 'siswa' && (
                                         <>
                                             <div className="mb-3">
-                                                <label className="form-label">Kelas</label>
-                                                <input 
-                                                    type="text"
-                                                    className="form-control"
+                                                <label className="form-label">🎓 Kelas</label>
+                                                <select 
+                                                    className="form-select"
                                                     name="kelas"
                                                     value={formData.kelas}
                                                     onChange={handleInputChange}
-                                                    placeholder="e.g. XI TKJ A"
-                                                />
+                                                >
+                                                    <option value="">Pilih Kelas</option>
+                                                    {DAFTAR_KELAS.map(k => (
+                                                        <option key={k} value={k}>{k}</option>
+                                                    ))}
+                                                </select>
                                             </div>
 
                                             <div className="mb-3">
-                                                <label className="form-label">Jurusan</label>
-                                                <input 
-                                                    type="text"
-                                                    className="form-control"
+                                                <label className="form-label">📖 Jurusan</label>
+                                                <select 
+                                                    className="form-select"
                                                     name="jurusan"
                                                     value={formData.jurusan}
                                                     onChange={handleInputChange}
-                                                    placeholder="e.g. Teknik Komputer Jaringan"
-                                                />
+                                                >
+                                                    <option value="">Pilih Jurusan</option>
+                                                    {DAFTAR_JURUSAN.map(j => (
+                                                        <option key={j} value={j}>{j}</option>
+                                                    ))}
+                                                </select>
                                             </div>
                                         </>
                                     )}
