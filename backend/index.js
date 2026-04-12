@@ -260,13 +260,14 @@ function mapOpenLibSubjectToCategory(subject) {
 }
 
 // Helper function to get the best CATEGORY ID from Open Library data
+// Returns NULL if no category can be determined (no forced defaults)
 async function getBestCategoryIdFromOpenLib(doc, db) {
     let categoryId = null;
-    let categoryName = 'Lainnya'; // Default category name
+    let categoryName = null;
     let foundCategories = [];
     
     const bookTitle = doc.title || 'Unknown';
-    console.log(`\n📦 Determining category (physical type) for: "${bookTitle}"`);
+    console.log(`\n📦 Attempting to determine category (physical type) for: "${bookTitle}"`);
     
     // Try subject_facets first
     if (doc.subject_facets && Array.isArray(doc.subject_facets) && doc.subject_facets.length > 0) {
@@ -274,7 +275,7 @@ async function getBestCategoryIdFromOpenLib(doc, db) {
             const mappedCategory = mapOpenLibSubjectToCategory(subject);
             if (mappedCategory && !foundCategories.includes(mappedCategory)) {
                 foundCategories.push(mappedCategory);
-                console.log(`  📦 Subject "${subject}" → Category "${mappedCategory}"`);
+                console.log(`  ✓ Subject "${subject}" → Category "${mappedCategory}"`);
             }
         }
     }
@@ -285,12 +286,12 @@ async function getBestCategoryIdFromOpenLib(doc, db) {
             const mappedCategory = mapOpenLibSubjectToCategory(subject);
             if (mappedCategory && !foundCategories.includes(mappedCategory)) {
                 foundCategories.push(mappedCategory);
-                console.log(`  📦 Subject "${subject}" → Category "${mappedCategory}"`);
+                console.log(`  ✓ Subject "${subject}" → Category "${mappedCategory}"`);
             }
         }
     }
     
-    // Use first found category
+    // Use first found category if any
     if (foundCategories.length > 0) {
         categoryName = foundCategories[0];
         console.log(`  🎯 Selected category: "${categoryName}"`);
@@ -303,15 +304,11 @@ async function getBestCategoryIdFromOpenLib(doc, db) {
             }
         } catch (err) {
             console.error(`  ⚠️ Error fetching category ID: ${err.message}`);
+            categoryId = null;
+            categoryName = null;
         }
-    }
-    
-    // Fallback to 'Lainnya' if no specific category found
-    if (categoryId === null) {
-        console.log(`  ⚠️ No specific category found, using Lainnya`);
-        const [lainnyaCategory] = await db.query('SELECT id FROM categories WHERE nama = "Lainnya"');
-        categoryId = lainnyaCategory[0]?.id || 12;
-        categoryName = 'Lainnya';
+    } else {
+        console.log(`  ℹ️ No specific category detected - will store as NULL`);
     }
     
     return { id: categoryId, nama: categoryName };
@@ -339,13 +336,14 @@ function mapOpenLibSubjectToGenre(subject) {
 }
 
 // Helper function to get the best GENRE ID (story theme) from Open Library data
+// Returns NULL if no genre can be determined (no forced defaults)
 async function getBestGenreIdFromOpenLib(doc, db) {
     let genreId = null;
-    let genreName = 'Lainnya'; // Default genre name
+    let genreName = null;
     let foundGenres = [];
     
     const bookTitle = doc.title || 'Unknown';
-    console.log(`\n🎭 Extracting genres (story themes) for: "${bookTitle}"`);
+    console.log(`\n🎭 Attempting to extract genres (story themes) for: "${bookTitle}"`);
     
     // Try subject_facets first (most reliable)
     if (doc.subject_facets && Array.isArray(doc.subject_facets) && doc.subject_facets.length > 0) {
@@ -354,7 +352,7 @@ async function getBestGenreIdFromOpenLib(doc, db) {
             const mappedGenre = mapOpenLibSubjectToGenre(subject);
             if (mappedGenre) {
                 foundGenres.push({ original: subject, mapped: mappedGenre });
-                console.log(`  ✅ Mapped "${subject}" → "${mappedGenre}"`);
+                console.log(`  ✓ Mapped "${subject}" → "${mappedGenre}"`);
             }
         }
     }
@@ -366,7 +364,7 @@ async function getBestGenreIdFromOpenLib(doc, db) {
             const mappedGenre = mapOpenLibSubjectToGenre(subject);
             if (mappedGenre) {
                 foundGenres.push({ original: subject, mapped: mappedGenre });
-                console.log(`  ✅ Mapped "${subject}" → "${mappedGenre}"`);
+                console.log(`  ✓ Mapped "${subject}" → "${mappedGenre}"`);
             }
         }
     }
@@ -374,7 +372,7 @@ async function getBestGenreIdFromOpenLib(doc, db) {
     // If we found mapped genres, use the first one
     if (foundGenres.length > 0) {
         const selectedGenre = foundGenres[0].mapped;
-        genreName = selectedGenre; // Set genre name
+        genreName = selectedGenre;
         console.log(`  🎯 Selected genre: "${selectedGenre}"`);
         
         // Get the genre_id from database
@@ -386,12 +384,14 @@ async function getBestGenreIdFromOpenLib(doc, db) {
             }
         } catch (err) {
             console.error(`  ⚠️ Error fetching genre ID: ${err.message}`);
+            genreId = null;
+            genreName = null;
         }
     } else {
-        console.log(`  ⚠️ No matching genres found, will use Uncategorized`);
+        console.log(`  ℹ️ No genre themes detected - will store as NULL`);
     }
     
-    return { id: genreId, nama: genreName }; // Returns object with both ID and name
+    return { id: genreId, nama: genreName };
 }
 
 // Simplified function to get genre name from Open Library (for search results)
@@ -887,9 +887,9 @@ app.post('/books/import-openlib', async (req, res) => {
 
         // Determine CATEGORY (physical type) and GENRE (story theme)
         let categoryId = null;
-        let categoryName = 'Lainnya';
+        let categoryName = null;
         let genreId = null;
-        let genreName = 'Lainnya';
+        let genreName = null;
         
         if (openLibData) {
             // Get category (physical book type)
@@ -901,22 +901,22 @@ app.post('/books/import-openlib', async (req, res) => {
             const genreResult = await getBestGenreIdFromOpenLib(openLibData, db);
             genreId = genreResult.id;
             genreName = genreResult.nama;
-        } else {
-            // Fallback if no OpenLib data provided
-            const [lainnyaCat] = await db.query('SELECT id FROM categories WHERE nama = "Lainnya"');
-            categoryId = lainnyaCat[0]?.id || 12;
-            categoryName = 'Lainnya';
-            
-            const [lainnyaGenre] = await db.query('SELECT id FROM genres WHERE nama = "Lainnya"');
-            genreId = lainnyaGenre[0]?.id || 23;
-            genreName = 'Lainnya';
         }
         
+        // Log classification result
         console.log(`\n✅ Classification complete:`);
-        console.log(`  📦 Category: "${categoryName}" (ID: ${categoryId})`);
-        console.log(`  🎭 Genre: "${genreName}" (ID: ${genreId})`);
+        if (categoryName) {
+            console.log(`  📦 Category: "${categoryName}" (ID: ${categoryId})`);
+        } else {
+            console.log(`  📦 Category: NULL (tidak terdeteksi)`);
+        }
+        if (genreName) {
+            console.log(`  🎭 Genre: "${genreName}" (ID: ${genreId})`);
+        } else {
+            console.log(`  🎭 Genre: NULL (tidak terdeteksi)`);
+        }
         
-        // Insert buku with BOTH category_id and genre_id
+        // Insert buku with optional category_id and genre_id (can be NULL)
         const insertResult = await db.query(
             'INSERT INTO books (judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url, category_id, genre_id) VALUES (?,?,?,?,?,?,?,?,?)',
             [title, author, publisher || null, categoryName, year || null, 1, cover_url || null, categoryId, genreId]
@@ -929,9 +929,9 @@ app.post('/books/import-openlib', async (req, res) => {
                 id: insertResult[0].insertId,
                 title: title,
                 categoryId: categoryId,
-                categoryName: categoryName,
+                categoryName: categoryName || '(tidak terdeteksi)',
                 genreId: genreId,
-                genreName: genreName
+                genreName: genreName || '(tidak terdeteksi)'
             }
         });
     } catch (err) {
