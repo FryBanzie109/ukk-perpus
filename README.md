@@ -6,14 +6,151 @@ school project. Don't get into it.
 
 Aplikasi web full-stack untuk manajemen perpustakaan yang memungkinkan admin mengelola buku, peminjaman, dan profil siswa secara terintegrasi.
 
-## 📋 Fitur Utama
+## 🎯 Fitur Utama
 
-- ✅ **Sistem Login** - Login untuk Admin dan Siswa
-- 📖 **Manajemen Buku** - Tambah, edit, hapus, dan cari buku (CRUD)
-- 👤 **Manajemen Profil** - Kelola data profil pengguna
-- 🔍 **Pencarian Buku** - Cari buku berdasarkan judul, penulis, atau penerbit
-- 🌙 **Dark Mode** - Tema gelap untuk kenyamanan tampilan
-- 📱 **Responsive Design** - Kompatibel dengan desktop dan mobile
+### Fitur User (Siswa)
+- ✅ **Browse & Cari Buku** - Cari buku dengan genre filtering
+- 📖 **Peminjaman Buku** - Pinjam buku dengan validasi otomatis
+- 📤 **Return Request** - Ajukan permintaan pengembalian buku
+- 📖 **Buku Saya** - Lihat daftar buku yang sedang dipinjam
+- 💰 **Lihat Denda** - Cek denda keterlambatan buku
+
+### Fitur Admin
+- 📚 **Manajemen Buku** - CRUD buku dengan genre support
+- 🎭 **Genre Management** - Kelola kategori/genre buku
+- 👥 **Manajemen Siswa** - Kelola profil dan kelas siswa
+- 📋 **Transaksi** - Lihat laporan peminjaman & pengembalian
+- 🔄 **Return Confirmation** - Konfirmasi permintaan pengembalian
+- 🖨️ **Laporan Denda** - Generate & print laporan denda PDF
+- 📥 **Import dari OpenLibrary** - Import buku dari API eksternal
+
+### Fitur Umum
+- ✅ **Sistem Login** - Role-based (Admin & Siswa)
+- 🌙 **Dark Mode** - Tema gelap untuk kenyamanan
+- 📱 **Responsive Design** - Kompatibel desktop & mobile
+- 🔐 **Validasi Data** - Input validation server-side
+
+---
+
+## ✨ Recent Updates & Improvements (v2.0)
+
+### 🗄️ Database Layer Optimization
+- ✅ **Genre Table** - Separate `genres` table dengan FK dari books
+- ✅ **Performance Indexes** - 9 strategic indexes for faster queries
+- ✅ **Timestamps** - `created_at` & `updated_at` on all tables
+- ✅ **Data Constraints** - UNIQUE username, FK relationships
+- ✅ **Better Relationships** - Proper foreign keys with CASCADE
+
+### 🔧 Backend API (v2 Endpoints)
+**New Improved API Endpoints:**
+```
+GET /genres                                    # Get all genres
+GET /books/v2/all?page=1&limit=20              # Paginated books
+GET /books/v2/search?keyword=&genre_id=        # Search + filter
+GET /books/v2/:id                              # Get book details
+POST /books/v2                                 # Create book (validated)
+PUT /books/v2/:id                              # Update book
+DELETE /books/v2/:id                           # Delete book
+POST /borrow/v2                                # Smart borrow (validated)
+POST /books/v2/:id/check-borrow                # Check eligibility
+```
+
+**Improvements:**
+- Input validation on all endpoints
+- Consistent error response format
+- Pagination support (default 20 items/page)
+- Smart borrow validation (checks overdue books, duplicates, stock)
+- Database transaction safety for critical operations
+
+### 💻 Frontend State Management
+- ✅ **Custom Hooks** - `useBooks()`, `useBorrowing()`, `useFormValidation()`
+- ✅ **Better State** - Separated concerns (data vs UI state)
+- ✅ **Validation** - Client-side + server-side validation
+- ✅ **Error Handling** - Comprehensive error messages
+- ✅ **Performance** - Pagination, efficient queries, smart loading
+
+### 📚 Documentation
+- ✅ **Architecture Overview** - Complete system design
+- ✅ **API Documentation** - All endpoints documented
+- ✅ **Frontend Hooks** - Usage examples & patterns
+- ✅ **Implementation Guide** - Step-by-step integration
+- ✅ **Quick Reference** - Developer cheatsheet
+
+---
+
+## 🔗 API Endpoints Reference
+
+### Genres
+```
+GET /genres
+Response: [{id, nama, deskripsi}, ...]
+```
+
+### Books (v2 - Recommended)
+```
+GET /books/v2/all?page=1&limit=20
+GET /books/v2/search?keyword=&genre_id=&page=1
+GET /books/v2/:id
+POST /books/v2
+PUT /books/v2/:id
+DELETE /books/v2/:id
+```
+
+### Borrowing
+```
+POST /borrow/v2
+POST /books/v2/:id/check-borrow
+GET /my-borrowed-books/:userId
+POST /return-request
+GET /pending-returns (Admin)
+POST /confirm-return/:transactionId (Admin)
+```
+
+### Reports
+```
+GET /late-fees
+GET /late-fees/:studentId
+GET /late-fees/download/pdf
+GET /late-fees/download/pdf/:studentId
+```
+
+**Note**: Old endpoints still work for backward compatibility. Use v2 endpoints for new features.
+
+---
+
+## 📁 Project Structure (Updated)
+
+```
+ukk-perpustakaan/
+├── backend/
+│   ├── index.js              # Server & routes
+│   ├── db.js                 # Database connection
+│   ├── utils.js              # Validation & helpers (NEW)
+│   ├── migrate.js            # Database migration
+│   ├── optimize-schema.js    # Schema optimization (NEW)
+│   └── package.json
+│
+├── frontend/
+│   ├── src/
+│   │   ├── hooks/
+│   │   │   └── useApi.js     # Custom hooks (NEW)
+│   │   ├── pages/
+│   │   ├── context/
+│   │   └── ...
+│   ├── package.json
+│   └── ...
+│
+├── 📋 Documentation/
+│   ├── INDEX.md                      # Overview & summary
+│   ├── REFACTORING_COMPLETE.md       # Detailed changes
+│   ├── API_IMPROVEMENTS.md           # New API docs
+│   ├── FRONTEND_IMPROVEMENTS.md      # Hook documentation
+│   ├── ARCHITECTURE_OVERVIEW.md      # Full architecture
+│   ├── QUICK_REFERENCE.md           # Developer guide
+│   └── ...
+│
+└── README.md
+```
 
 ---
 
@@ -118,6 +255,13 @@ password: ''          // Kosong untuk XAMPP default
 database: 'ukk_perpus'
 ```
 
+**Run Database Migration** (setup genres table & optimization):
+```bash
+cd backend
+node migrate.js          # Setup basic schema
+node optimize-schema.js  # Optimize with genres & indexes (v2.0)
+```
+
 Jika menggunakan password MySQL, edit `backend/db.js`:
 ```javascript
 const db = mysql.createPool({
@@ -138,6 +282,14 @@ npm install
 **Konfigurasi API** (jika backend di server lain):
 - Edit file yang melakukan API call (misalnya di `src/`)
 - Sesuaikan URL dari `http://localhost:5000` ke URL backend Anda
+
+### 5️⃣ (Optional) Import Custom Hooks
+
+Untuk menggunakan custom hooks di frontend:
+```bash
+# Hooks sudah ready di: frontend/src/hooks/useApi.js
+import { useBooks, useBorrowing } from '../hooks/useApi';
+```
 
 ---
 
