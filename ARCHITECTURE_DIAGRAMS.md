@@ -1,0 +1,693 @@
+# UKK Perpustakaan - System Architecture Diagrams
+
+## Database Model Relationship Diagram
+
+```
+┌─────────────────┐          ┌──────────────────┐
+│     users       │          │      books       │
+├─────────────────┤          ├──────────────────┤
+│ id (PK)         │          │ id (PK)          │
+│ nama_lengkap    │          │ judul            │
+│ username        │          │ penulis          │
+│ password        │          │ penerbit         │
+│ role            │          │ kategori         │
+│ foto_profil     │          │ tahun_terbit     │
+│ bio             │          │ stok             │
+│ kelas           │          │ cover_url        │
+│ jurusan         │          │                  │
+└────────┬────────┘          └────────┬─────────┘
+         │                            │
+         │ 1 → M                      │ 1 → M
+         │                            │
+         └───────────────┬────────────┘
+                         │
+                    ┌────▼──────────────┐
+                    │  transactions     │
+                    ├───────────────────┤
+                    │ id (PK)           │
+                    │ user_id (FK)      │
+                    │ book_id (FK)      │
+                    │ tanggal_pinjam    │
+                    │ tanggal_kembali   │
+                    │ status            │
+                    │ denda             │
+                    │ tanggal_perm_kmb  │
+                    │ waktu_perm_kmb    │
+                    │ waktu_konf_kmb    │
+                    └───────────────────┘
+
+Legend:
+  1 → M: One-to-Many relationship
+  PK: Primary Key
+  FK: Foreign Key
+```
+
+---
+
+## User Role & Permission Matrix
+
+```
+┌──────────────────────┬──────────────┬───────────┐
+│ Resource/Action      │ Admin        │ Siswa     │
+├──────────────────────┼──────────────┼───────────┤
+│ Login                │ ✓            │ ✓         │
+│ Register             │ ✗            │ ✓         │
+│ View Catalog         │ ✓            │ ✓         │
+│ Search Books         │ ✓            │ ✓         │
+│ Filter by Category   │ ✓            │ ✓         │
+│ Browse Book Details  │ ✓            │ ✓         │
+├──────────────────────┼──────────────┼───────────┤
+│ Add Book             │ ✓            │ ✗         │
+│ Edit Book            │ ✓            │ ✗         │
+│ Delete Book          │ ✓            │ ✗         │
+│ Manage Stock         │ ✓            │ ✗         │
+│ Import from OpenLib  │ ✓            │ ✗         │
+├──────────────────────┼──────────────┼───────────┤
+│ Borrow Book          │ ✓            │ ✓         │
+│ View Borrowed Books  │ Own Books    │ ✓ Own     │
+│                      │ & All Books  │           │
+│ Request Return       │ ✗            │ ✓         │
+│ Confirm Return       │ ✓            │ ✗         │
+├──────────────────────┼──────────────┼───────────┤
+│ View Students        │ ✓            │ ✗         │
+│ Search Students      │ ✓            │ ✗         │
+│ Add Student          │ ✓            │ ✗         │
+│ Delete Student       │ ✓            │ ✗         │
+│ View Student Profile │ ✓            │ ✗         │
+│ Student Borrow Hist  │ ✓            │ ✗         │
+├──────────────────────┼──────────────┼───────────┤
+│ View Late Fees       │ ✓            │ ✗         │
+│ Download Fee Report  │ ✓            │ ✗         │
+│ Download Indiv PDF   │ ✓            │ ✗         │
+├──────────────────────┼──────────────┼───────────┤
+│ Edit Profile         │ ✓            │ ✓         │
+│ Upload Photo         │ ✓            │ ✓         │
+│ View Own Profile     │ ✓            │ ✓         │
+└──────────────────────┴──────────────┴───────────┘
+```
+
+---
+
+## Request-Response Flow for Key Operations
+
+### 1. Authentication Flow
+
+```
+┌─────────────┐
+│   Browser   │
+└──────┬──────┘
+       │ 1. POST /login
+       │    { username, password }
+       ▼
+┌──────────────────┐       ┌────────────────┐
+│   Express API    │◄─────►│  MySQL DB      │
+│   (port 5000)    │       │  (localhost)   │
+└──────┬───────────┘       └────────────────┘
+       │ 2. SELECT * FROM users
+       │    WHERE username=? AND password=?
+       │
+       ├─ 2a. If match found:
+       │      Return user object
+       │ 2b. If no match:
+       │      Return 401 Unauthorized
+       │
+       ▼
+┌─────────────┐
+│  Response   │
+│ { success,  │
+│   user }    │
+└──────┬──────┘
+       │ 3. Store in localStorage('user')
+       │
+       ▼
+┌──────────────────┐
+│   useEffect      │
+│   triggered      │
+│   Dashboard      │
+│   rendered       │
+└──────────────────┘
+```
+
+### 2. Book Borrowing Flow
+
+```
+┌──────────────────┐
+│  Student View    │
+│  Katalog Books   │
+└────────┬─────────┘
+         │
+         │ Click "Pinjam Buku"
+         ▼
+┌──────────────────────────────────────┐
+│  POST /borrow                        │
+│  { user_id: 2, book_id: 5 }         │
+└──────────┬───────────────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│  Backend Validation          │
+│  SELECT stok FROM books      │
+│  WHERE id = 5                │
+└────────┬─────────────────────┘
+         │
+    ┌────┴─────┐
+    │ Is stok>0?
+    │
+    ├─ Yes ──┐
+    │        ▼
+    │   UPDATE books SET stok = stok - 1
+    │   INSERT INTO transactions
+    │   (user_id, book_id, tanggal_pinjam,
+    │    status = 'dipinjam')
+    │        │
+    │        ▼
+    │   Response: {"message": "Peminjaman Berhasil"}
+    │        │
+    │        ▼
+    │   Frontend: fetchData()
+    │   Update myBorrowedBooks state
+    │
+    └─ No ──┐
+         ▼
+    Response: 400
+    {"message": "Stok habis atau buku tidak ada!"}
+    │
+    ▼
+    Frontend: alert(error)
+```
+
+### 3. Return Request & Confirmation Flow
+
+```
+┌──────────────────────────┐
+│ Student Borrowed Books   │
+└────────┬─────────────────┘
+         │
+         │ Click "Kembalikan"
+         ▼
+┌─────────────────────────────────┐
+│ Confirmation Dialog             │
+│ "Anda yakin ingin mengembalikan?"
+└────────┬────────────────────────┘
+         │ Yes
+         ▼
+┌──────────────────────────────────────┐
+│ POST /return-request                 │
+│ { transaction_id: 1,                 │
+│   book_id: 5,                        │
+│   user_id: 2 }                       │
+└────────┬─────────────────────────────┘
+         │
+         ▼
+┌────────────────────────────────────┐
+│ UPDATE transactions SET            │
+│ status = 'diminta_kembali'         │
+│ tanggal_permintaan_kembali = TODAY │
+│ waktu_permintaan_kembali = NOW     │
+└──────────┬───────────────────────┤
+           │                       │
+           ▼                       ▼
+    Frontend Response    ┌────────────────────┐
+    alert("Menunggu     │  Admin Dashboard   │
+    konfirmasi admin")  │  /pending-returns  │
+                        │  (updates)         │
+                        └──────────┬─────────┘
+                                   │
+                        ┌──────────▼──────────┐
+                        │ Admin Click        │
+                        │ "Konfirmasi       │
+                        │  Pengembalian"    │
+                        └──────────┬─────────┘
+                                   │
+                        ┌──────────▼──────────────────┐
+                        │ POST /confirm-return/:id   │
+                        └──────────┬─────────────────┘
+                                   │
+                        ┌──────────▼──────────────────┐
+                        │ Calculate Late Fee:        │
+                        │ days = NOW - tanggal_pinjam│
+                        │ if days > 7:               │
+                        │   denda = (days-7) × 2000 │
+                        │ else:                      │
+                        │   denda = 0                │
+                        │                            │
+                        │ UPDATE transactions:       │
+                        │ status = 'kembali'         │
+                        │ tanggal_kembali = TODAY    │
+                        │ denda = calculated_denda   │
+                        │                            │
+                        │ UPDATE books:              │
+                        │ stok = stok + 1            │
+                        └──────────┬─────────────────┘
+                                   │
+                        ┌──────────▼──────────────────┐
+                        │ Response:                  │
+                        │ { message,                 │
+                        │   denda,                   │
+                        │   keterangan }             │
+                        └──────────┬─────────────────┘
+                                   │
+                        ┌──────────▼──────────────────┐
+                        │ Frontend Alert:            │
+                        │ "Buku dikembalikan"        │
+                        │ "Denda: Rp 6000" (if any)  │
+                        │ fetchData() & refresh      │
+                        └────────────────────────────┘
+```
+
+### 4. Open Library Book Import Flow
+
+```
+┌─────────────────────────────────┐
+│ Admin: Import from Open Library │
+└────────┬────────────────────────┘
+         │
+         │ Type search query
+         ▼
+┌──────────────────────────────────────────┐
+│ GET /books/search-openlib?q=gatsby       │
+└────────┬─────────────────────────────────┘
+         │
+         ▼
+┌────────────────────────────────┐
+│ Backend: HTTPS GET Request     │
+│ https://openlibrary.org/       │
+│ search.json?                   │
+│ title=gatsby&limit=20          │
+└────────┬─────────────────────┤
+         │                     │
+         ▼                     ▼
+    ┌──────────┐       ┌──────────────────┐
+    │ External │       │ Timeout/Error    │
+    │   API    │       │ Handler          │
+    │ responds │       └──────────────────┘
+    │ (JSON)   │
+    └────┬─────┘
+         │
+         ▼
+┌──────────────────────────────┐
+│ Parse Response:              │
+│ - Extract cover_i            │
+│ - Get subject_facets/subject │
+│ - Map to genre               │
+│ - Build cover_url            │
+│ - Format author name         │
+└────────┬─────────────────────┘
+         │
+         ▼
+┌──────────────────────────────┐
+│ Response to Frontend:        │
+│ Array of books with:         │
+│ - title                      │
+│ - author                     │
+│ - publisher                  │
+│ - year                       │
+│ - genre                      │
+│ - cover_url                  │
+│ - isbn                       │
+└────────┬─────────────────────┘
+         │
+         ▼
+┌──────────────────────────────┐
+│ Frontend Display Results     │
+│ with Cover Images            │
+│ User selects one             │
+└────────┬─────────────────────┘
+         │
+         │ Click "Import"
+         ▼
+┌──────────────────────────────────┐
+│ POST /books/import-openlib       │
+│ { title, author, publisher,      │
+│   year, genre, cover_url }       │
+└────────┬───────────────────────┤
+         │                       │
+         ▼                       ▼
+    ┌──────────┐         ┌────────────────────┐
+    │ Validate │         │ Check if book      │
+    │ required │         │ already exists     │
+    │ fields   │         │ (SELECT WHERE      │
+    │          │         │  judul=? AND       │
+    │          │         │  penulis=?)        │
+    └────┬─────┘         └─────────┬──────────┘
+         │                         │
+         ├─────────┬───────────────┤
+         │         │          ┌────┴──────┐
+         │         │   Yes    │ Response: │
+         │         │◄─────────┤ 400 error │
+         │         │          │ "Sudah ada"
+         │         │          └───────────┘
+         │         │
+         │    No   │
+         ▼         │
+    ┌─────────────────────────────────┐
+    │ INSERT INTO books               │
+    │ (judul, penulis, penerbit,      │
+    │  kategori, tahun_terbit,        │
+    │  stok=1, cover_url)             │
+    │                                 │
+    │ Response: {message: "Berhasil"} │
+    └────────┬────────────────────────┘
+             │
+             ▼
+    ┌─────────────────────────────────┐
+    │ Frontend:                       │
+    │ alert("Buku berhasil diimport") │
+    │ Clear search & results          │
+    │ fetchData() refresh books list  │
+    └─────────────────────────────────┘
+```
+
+---
+
+## Component State Management Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Dashboard.jsx (Main Container)          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  useEffect(user) → Fetch Data                              │
+│  ├─ GET /books                                             │
+│  ├─ GET /students (if admin)                               │
+│  ├─ GET /transactions (if admin)                           │
+│  ├─ GET /my-borrowed-books/{id} (if siswa)                 │
+│  └─ GET /pending-returns (if admin)                        │
+│                                                             │
+│  State Variables:                                          │
+│  ├─ user: Current logged-in user                           │
+│  ├─ books: All books array                                 │
+│  ├─ activeTab: Current section (katalog/transaksi/siswa)   │
+│  ├─ transactions: All transactions array                    │
+│  ├─ students: All students array                           │
+│  ├─ myBorrowedBooks: Student's active borrows              │
+│  ├─ pendingReturns: Return requests waiting confirmation    │
+│  └─ lateFees: Students with outstanding fees               │
+│                                                             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+         ┌───────────────┼───────────────┐
+         │               │               │
+         ▼               ▼               ▼
+    ┌────────────┐  ┌──────────────┐  ┌─────────────┐
+    │   Admin    │  │   Admin      │  │   Siswa     │
+    │ Katalog    │  │ Transaksi    │  │ Katalog     │
+    │ Section    │  │ Section      │  │ Section     │
+    ├────────────┤  ├──────────────┤  ├─────────────┤
+    │ State:     │  │ State:       │  │ State:      │
+    │ -books     │  │ -transactions│  │ -books      │
+    │ -search    │  │ -pending     │  │ -search     │
+    │ -openLib..│  │ -selectedBook│  │ -myBorrowed │
+    │ -selected  │  │              │  │ -selected   │
+    │ -filter..  │  │ Actions:     │  │             │
+    │ -modal     │  │ -confirmRetu │  │ Actions:    │
+    │            │  │ -requestRetu │  │ -pinjamBuku │
+    │ Actions:   │  │ -fetchPending│  │ -requestRetu│
+    │ -addBook   │  │              │  │ -viewProfile│
+    │ -editBook  │  │              │  │             │
+    │ -deleteBook│  │              │  │             │
+    │ -import    │  │              │  │             │
+    │ -updateStok│  │              │  │             │
+    │ -search    │  │              │  │             │
+    │ -viewBook  │  │              │  │             │
+    └────────────┘  └──────────────┘  └─────────────┘
+```
+
+---
+
+## API Endpoint Organization
+
+```
+┌────────────────────────────────────────────────────────────┐
+│              Express Server (port 5000)                   │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  Authentication                                           │
+│  ├─ POST /login              → Validate credentials      │
+│  └─ POST /register          → Create student account     │
+│                                                            │
+│  Book Management                                          │
+│  ├─ GET /books              → List all books            │
+│  ├─ GET /books/:id          → Get book details          │
+│  ├─ GET /search-books       → Search & filter           │
+│  ├─ GET /books/get-kategori → Get categories            │
+│  ├─ POST /books             → Add book (admin)          │
+│  ├─ PUT /books/:id          → Update book (admin)       │
+│  ├─ DELETE /books/:id       → Delete book (admin)       │
+│  └─ PUT /books/:id/update-stok → Adjust stock (admin)   │
+│                                                            │
+│  Open Library Integration                                 │
+│  ├─ GET /books/search-openlib → Search external API     │
+│  └─ POST /books/import-openlib → Import to DB (admin)   │
+│                                                            │
+│  Transactions (Borrowing/Returning)                       │
+│  ├─ POST /borrow            → Create borrow (logged users)
+│  ├─ POST /return-request     → Request return (siswa)   │
+│  ├─ POST /return            → Direct return (legacy)    │
+│  ├─ GET /transactions       → All transactions (admin)   │
+│  ├─ GET /pending-returns    → Waiting requests (admin)   │
+│  ├─ POST /confirm-return/:id → Approve return (admin)   │
+│  ├─ GET /my-borrowed-books/:id → My books (siswa)      │
+│  └─ GET /student-borrowed-books/:id → History (admin)   │
+│                                                            │
+│  Student Management                                       │
+│  ├─ GET /students           → List all (admin)          │
+│  ├─ GET /search-students    → Search & filter (admin)   │
+│  ├─ GET /students/get-kelas → Classes list             │
+│  ├─ GET /students/get-jurusan → Majors list            │
+│  ├─ POST /students          → Register student (admin)   │
+│  └─ DELETE /students/:id    → Remove student (admin)    │
+│                                                            │
+│  User Profiles                                            │
+│  ├─ GET /profile/:id        → Get profile data          │
+│  └─ PUT /profile/:id        → Update profile            │
+│                                                            │
+│  Late Fees & Reports                                      │
+│  ├─ GET /late-fees          → All students' fees (admin) │
+│  ├─ GET /late-fees/:id      → Student fees detail (admin)│
+│  ├─ GET /late-fees/download/pdf → Full report PDF       │
+│  └─ GET /late-fees/download/pdf/:id → Student PDF       │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+         ▲
+         │ HTTP Requests
+         │ (JSON)
+         │
+    ┌────┴──────────────────────────────────────┐
+    │                                            │
+┌───▼────────────────┐             ┌────────────▼─────┐
+│  Frontend (Vite)   │             │   MySQL Database │
+│  React Components  │             │   (ukk_perpus)   │
+│                    │             │                  │
+│ - Dashboard.jsx    │             │ Tables:          │
+│ - Login.jsx        │             │ - users          │
+│ - Profile.jsx      │             │ - books          │
+│ - ThemeContext.jsx │             │ - transactions   │
+│                    │             │                  │
+└────────────────────┘             └──────────────────┘
+```
+
+---
+
+## File Structure & Data Flow
+
+```
+ukk_perpustakaan/
+│
+├── backend/
+│   ├── index.js              ◄──┐ 
+│   │  └─ All API endpoints      │
+│   │  └─ Database queries       ├─ Server Logic
+│   │  └─ Business Logic         │
+│   │                             │
+│   ├── db.js                 ←──┤ Database Connection
+│   │  └─ MySQL pool config      │
+│   │                             │
+│   ├── migrate.js            ←──┤ Database Setup
+│   │  └─ Add columns to tables   │
+│   │                             │
+│   ├── migrate-profile.js    ←──┘ Database Setup
+│   │  └─ Add profile columns
+│   │
+│   └── package.json
+│      └─ Dependencies (express, mysql2, pdfkit, cors)
+│
+├── frontend/
+│   ├── index.html
+│   │  └─ Entry point HTML
+│   │
+│   ├── src/
+│   │   ├── main.jsx          ◄──┐
+│   │   │  └─ React root          │
+│   │   │                         │
+│   │   ├── App.jsx           ←──┤ Router & Layout
+│   │   │  └─ Routing logic       │
+│   │   │                         ├─ UI/Component Logic
+│   │   ├── pages/               │
+│   │   │   ├── Login.jsx      ←─┤
+│   │   │   │  └─ Auth form       │
+│   │   │   │                     │
+│   │   │   ├── Dashboard.jsx  ←──┤ Main Application
+│   │   │   │  └─ All features    │  (Admin & Siswa)
+│   │   │   │  └─ State management│
+│   │   │   │                     │
+│   │   │   └── Profile.jsx    ←──┘
+│   │   │      └─ Profile page
+│   │   │
+│   │   ├── context/
+│   │   │   └── ThemeContext.jsx
+│   │   │      └─ Dark/Light mode
+│   │   │
+│   │   ├── App.css
+│   │   │  └─ Global styles
+│   │   │
+│   │   └── index.css
+│   │      └─ Global styles
+│   │
+│   ├── vite.config.js
+│   │  └─ Build configuration
+│   │
+│   └── package.json
+│      └─ Dependencies (react, axios, react-router-dom, bootstrap)
+│
+├── ARCHITECTURE_OVERVIEW.md
+│  └─ (This documentation you're reading)
+│
+├── package.json (project root - optional)
+├── README.md
+└── LICENSE
+
+Data Flow Summary:
+  UI Input → React State → Axios HTTP Request
+    ↓
+  Backend validates → Database query
+    ↓
+  Database update/query
+    ↓
+  JSON Response → React Update State → Update UI
+```
+
+---
+
+## Error Handling Flow
+
+```
+┌─────────────┐
+│  User Input │
+└──────┬──────┘
+       │
+       ▼
+┌──────────────────────┐
+│  Frontend Validation │
+│  (Basic checks)      │
+└────┬─────────────────┘
+     │
+     ├─ Error → alert("Validasi gagal")
+     │          (No API call)
+     │
+     └─ OK → API Call
+            │
+            ▼
+     ┌────────────────────────────┐
+     │  Backend Validation        │
+     │  - Required fields         │
+     │  - Database constraints    │
+     │  - Business logic (status) │
+     └────┬──────────────────────┤
+          │                      │
+          ├─ Error → 400/404/409 Error Response
+          │          └─ Frontend catches
+          │             alert(error.message)
+          │
+          └─ OK → Process Request
+                 │
+                 ▼
+            ┌──────────────────┐
+            │ Database Op      │
+            │ (INSERT/UPDATE)  │
+            └────┬─────────────┘
+                 │
+                 ├─ Error → 500 error response
+                 │
+                 └─ Success → 200 with data
+                             │
+                             ▼
+                        ┌──────────────┐
+                        │ Frontend:    │
+                        │ - update UI  │
+                        │ - setState() │
+                        │ - alert OK   │
+                        └──────────────┘
+```
+
+---
+
+## Transaction Status State Machine
+
+```
+                    ┌─────────────────────────────────────┐
+                    │   NOT BORROWED (Book Available)     │
+                    └────────────────────┬────────────────┘
+                                         │
+                                         │ POST /borrow
+                                         │
+                                         ▼
+                    ┌─────────────────────────────────────┐
+                    │   DIPINJAM (Currently Borrowed)     │
+                    │   - Stock is decreased              │
+                    │   - Student can request return      │
+                    └────┬───────────────────────┬────────┘
+                         │                       │
+              POST /return-request     POST /return (legacy)
+                         │                       │
+                         ▼                       ▼
+     ┌──────────────────────────────┐    ┌──────────────────┐
+     │ DIMINTA_KEMBALI              │    │ Waiting for      │
+     │ (Return Requested)           │    │ Direct Return    │
+     │ - Pending admin confirmation │    │ Deprecated flow  │
+     └──────────┬───────────────────┘    └────────┬─────────┘
+                │                                 │
+    POST /confirm-return/:id                      │
+                │                                 │
+                └────────────────┬────────────────┘
+                                 │
+                                 ▼ Fees Calculated
+                    ┌─────────────────────────────────────┐
+                    │  KEMBALI (Returned & Confirmed)     │
+                    │  - Stock is increased               │
+                    │  - Denda is set                     │
+                    │  - tanggal_kembali is set          │
+                    └─────────────────────────────────────┘
+```
+
+---
+
+## Late Fee Calculation Timeline
+
+```
+Borrow Date: Jan 1
+Return Limit: Jan 1 + 7 days = Jan 8
+
+Case 1: On-time return
+  Return on: Jan 5
+  Days late: 5 - 7 = -2 (negative, so 0)
+  Fee: Rp 0
+
+Case 2: 3 days late
+  Return on: Jan 11
+  Days late: 11 - 8 = 3
+  Fee: 3 × Rp 2,000 = Rp 6,000
+
+Case 3: 10 days late
+  Return on: Jan 18
+  Days late: 18 - 8 = 10
+  Fee: 10 × Rp 2,000 = Rp 20,000
+
+Formula:
+  days_late = DATEDIFF(return_date, borrow_date + 7)
+  if days_late > 0:
+    fee = days_late × 2000
+  else:
+    fee = 0
+```
+

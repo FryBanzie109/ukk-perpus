@@ -1028,10 +1028,26 @@ app.post('/borrow', async (req, res) => {
     } catch (err) { res.status(500).json(err); }
 });
 
-// Kembalikan Buku dengan Denda
+// Kembalikan Buku dengan Denda (DEPRECATED - Gunakan /return-request + /confirm-return untuk workflow proper)
 app.post('/return', async (req, res) => {
-    const { transaction_id, book_id } = req.body;
+    const { transaction_id, book_id, user_id } = req.body;
     try {
+        // Validasi: hanya admin yang boleh menggunakan endpoint ini
+        if (user_id) {
+            const [user] = await db.query('SELECT role FROM users WHERE id = ?', [user_id]);
+            
+            if (user.length === 0) {
+                return res.status(404).json({ message: "User tidak ditemukan" });
+            }
+            
+            if (user[0].role !== 'admin') {
+                return res.status(403).json({ 
+                    success: false,
+                    message: "Akses ditolak. Hanya admin yang dapat mengembalikan buku langsung. Silakan gunakan /return-request untuk mengajukan permintaan." 
+                });
+            }
+        }
+        
         // Ambil data transaksi untuk hitung denda
         const [transaction] = await db.query('SELECT tanggal_pinjam FROM transactions WHERE id = ?', [transaction_id]);
         
@@ -1050,7 +1066,7 @@ app.post('/return', async (req, res) => {
         const denda_per_hari = 2000; // Rp 2000 per hari
         const denda = selisih_hari > batas_hari ? (selisih_hari - batas_hari) * denda_per_hari : 0;
         
-        console.log(`Tanggal Pinjam: ${tanggal_pinjam}, Tanggal Kembali: ${tanggal_kembali}, Selisih: ${selisih_hari} hari, Denda: Rp ${denda}`);
+        console.log(`[Direct Return] Transaksi ${transaction_id}: Tanggal Pinjam: ${tanggal_pinjam}, Tanggal Kembali: ${tanggal_kembali}, Selisih: ${selisih_hari} hari, Denda: Rp ${denda}`);
         
         // Update Transaksi dengan tanggal kembali dan denda
         await db.query('UPDATE transactions SET status = "kembali", tanggal_kembali = CURDATE(), denda = ? WHERE id = ?', [denda, transaction_id]);
@@ -1095,7 +1111,22 @@ app.post('/return-request', async (req, res) => {
 
 // Admin melihat semua permintaan pengembalian yang pending
 app.get('/pending-returns', async (req, res) => {
+    const { user_id } = req.query;
     try {
+        // Validasi: hanya admin yang boleh melihat pending returns
+        const [user] = await db.query('SELECT role FROM users WHERE id = ?', [user_id]);
+        
+        if (user.length === 0) {
+            return res.status(404).json({ message: "User tidak ditemukan" });
+        }
+        
+        if (user[0].role !== 'admin') {
+            return res.status(403).json({ 
+                success: false,
+                message: "Akses ditolak. Hanya admin yang dapat melihat daftar pengembalian buku pending." 
+            });
+        }
+        
         const sql = `
             SELECT 
                 t.id, 
@@ -1126,7 +1157,22 @@ app.get('/pending-returns', async (req, res) => {
 // Admin mengkonfirmasi pengembalian buku
 app.post('/confirm-return/:transactionId', async (req, res) => {
     const { transactionId } = req.params;
+    const { user_id } = req.body;
     try {
+        // Validasi: hanya admin yang boleh konfirmasi pengembalian
+        const [user] = await db.query('SELECT role FROM users WHERE id = ?', [user_id]);
+        
+        if (user.length === 0) {
+            return res.status(404).json({ message: "User tidak ditemukan" });
+        }
+        
+        if (user[0].role !== 'admin') {
+            return res.status(403).json({ 
+                success: false,
+                message: "Akses ditolak. Hanya admin yang dapat mengonfirmasi pengembalian buku." 
+            });
+        }
+        
         // Ambil data transaksi untuk hitung denda
         const [transaction] = await db.query('SELECT * FROM transactions WHERE id = ? AND status = "diminta_kembali"', [transactionId]);
         
