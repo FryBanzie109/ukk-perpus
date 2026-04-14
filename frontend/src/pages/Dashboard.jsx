@@ -3,12 +3,29 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 
+// Hardcoded constants untuk kelas, jurusan, dan kategori
+const DAFTAR_KELAS = ['X', 'XI', 'XII'];
+const DAFTAR_JURUSAN = ['PPLG', 'AKL', 'TJKT', 'MPLB', 'DKV'];
+const DAFTAR_KATEGORI = [
+    'Fiksi',
+    'Non-Fiksi',
+    'Pelajaran',
+    'Referensi',
+    'Pengetahuan Umum',
+    'Biografi',
+    'Sejarah',
+    'Teknologi',
+    'Seni & Budaya',
+    'Anak-anak'
+];
+
 export default function Dashboard() {
     const { isDark } = useTheme();
     const [books, setBooks] = useState([]);
     const [transactions, setTransactions] = useState([]);
     const [students, setStudents] = useState([]);
     const [myBorrowedBooks, setMyBorrowedBooks] = useState([]);
+    const [myBorrowingHistory, setMyBorrowingHistory] = useState([]);
     const [activeTab, setActiveTab] = useState('katalog');
     const [activeTabSiswa, setActiveTabSiswa] = useState('katalog'); // Tab untuk siswa
     const [user, setUser] = useState(null);
@@ -20,8 +37,7 @@ export default function Dashboard() {
     const [showBookProfile, setShowBookProfile] = useState(false);
     
     // Search & Filter Buku States
-    const [filterKategoriBuku, setFilterKategoriBuku] = useState('');
-    const [daftarKategoriBuku, setDaftarKategoriBuku] = useState([]);
+
     
     // Search & Filter Siswa States
     const [searchSiswa, setSearchSiswa] = useState('');
@@ -47,14 +63,13 @@ export default function Dashboard() {
     // Late Fees States
     const [lateFees, setLateFees] = useState([]);
 
-    // Return Request States
-    const [pendingReturns, setPendingReturns] = useState([]);
-    const [pendingReturnsLoading, setPendingReturnsLoading] = useState(false);
-
     // Stock Management States
     const [selectedBookForStock, setSelectedBookForStock] = useState(null);
-    const [showStockModal, setShowStockModal] = useState(false);
     const [stokInput, setStokInput] = useState({ jumlah: '', tipe: 'tambah' });
+
+    // Edit Book States
+    const [editBookData, setEditBookData] = useState(null);
+    const [showEditModal, setShowEditModal] = useState(false);
 
     const navigate = useNavigate();
 
@@ -83,14 +98,16 @@ export default function Dashboard() {
                 const resStudents = await axios.get('http://localhost:5000/students');
                 setStudents(resStudents.data);
 
-                // Fetch pending returns untuk admin (pass user_id untuk validasi role)
-                const resPendingReturns = await axios.get(`http://localhost:5000/pending-returns?user_id=${user.id}`);
-                setPendingReturns(resPendingReturns.data);
+
             }
 
             if (user?.role === 'siswa') {
                 const resBorrowed = await axios.get(`http://localhost:5000/my-borrowed-books/${user.id}`);
                 setMyBorrowedBooks(resBorrowed.data);
+                
+                // Fetch borrowing history untuk siswa
+                const resHistory = await axios.get(`http://localhost:5000/my-borrowing-history/${user.id}`);
+                setMyBorrowingHistory(resHistory.data);
             }
         } catch (err) { console.error(err); }
     }, [user]);
@@ -168,6 +185,17 @@ export default function Dashboard() {
                     } catch (err) {
                         console.error('❌ Error fetching borrowed books:', err);
                     }
+
+                    // Fetch borrowing history untuk siswa
+                    console.log('Siswa detected, fetching borrowing history...');
+                    try {
+                        const resHistory = await axios.get(`http://localhost:5000/my-borrowing-history/${user.id}`);
+                        if (!mounted) return;
+                        console.log('✅ Borrowing history:', resHistory.data);
+                        setMyBorrowingHistory(resHistory.data);
+                    } catch (err) {
+                        console.error('❌ Error fetching borrowing history:', err);
+                    }
                 }
             } catch (err) {
                 console.error('❌ Critical error:', err);
@@ -184,19 +212,7 @@ export default function Dashboard() {
         setSiswaFiltered(students);
     }, [students]);
 
-    // Load kategori buku saat admin page atau saat user pertama kali login
-    useEffect(() => {
-        if (user && user.role === 'admin') {
-            loadKategoriBuku();
-        }
-    }, [user]);
 
-    // Load kategori buku saat siswa membuka katalog
-    useEffect(() => {
-        if (user && user.role === 'siswa' && activeTabSiswa === 'katalog') {
-            loadKategoriBuku();
-        }
-    }, [activeTabSiswa, user]);
 
     // --- LOGIC BUKU ---
     const pinjamBuku = async (bookId) => {
@@ -207,43 +223,7 @@ export default function Dashboard() {
         } catch (err) { alert(err.response?.data?.message); }
     };
 
-    // Request pengembalian buku (DEPRECATED - hanya admin yang bisa handle return sekarang)
-    const requestReturnBook = async (transaction) => {
-        alert('⛔ Akses Ditolak: Hanya admin yang dapat memproses pengembalian buku. Silakan hubungi admin perpustakaan.');
-    };
-
-    // Ambil daftar permintaan pengembalian (admin)
-    const fetchPendingReturns = async () => {
-        try {
-            setPendingReturnsLoading(true);
-            // Pass user_id untuk validasi admin role
-            const res = await axios.get(`http://localhost:5000/pending-returns?user_id=${user.id}`);
-            setPendingReturns(res.data);
-        } catch (err) {
-            console.error('Error fetching pending returns:', err);
-            alert('Error: ' + (err.response?.data?.message || err.message));
-        } finally {
-            setPendingReturnsLoading(false);
-        }
-    };
-
     // Konfirmasi pengembalian buku (admin)
-    const confirmReturnBook = async (transaction) => {
-        if (window.confirm(`Konfirmasi pengembalian buku "${transaction.judul}" dari ${transaction.nama_lengkap}?`)) {
-            try {
-                // Pass user_id untuk validasi admin role
-                const res = await axios.post(`http://localhost:5000/confirm-return/${transaction.id}`, {
-                    user_id: user.id
-                });
-                alert(`Pengembalian dikonfirmasi.\n${res.data.keterangan}`);
-                fetchPendingReturns();
-                fetchData();
-            } catch (err) {
-                alert('Error: ' + (err.response?.data?.message || err.message));
-            }
-        }
-    };
-
     const tambahBuku = async (e) => {
         e.preventDefault();
         try {
@@ -272,12 +252,11 @@ export default function Dashboard() {
         }
     };
 
-    const searchBuku = async (query, kategori = filterKategoriBuku) => {
+    const searchBuku = async (query) => {
         setSearchQuery(query);
         try {
             const params = new URLSearchParams();
             if (query.trim()) params.append('q', query.trim());
-            if (kategori.trim()) params.append('kategori', kategori.trim());
 
             const url = params.toString() 
                 ? `http://localhost:5000/search-books?${params.toString()}`
@@ -291,21 +270,7 @@ export default function Dashboard() {
         }
     };
 
-    // Load daftar kategori buku
-    const loadKategoriBuku = async () => {
-        try {
-            const res = await axios.get('http://localhost:5000/books/get-kategori');
-            setDaftarKategoriBuku(res.data || []);
-        } catch (err) {
-            console.error('Error loading kategori:', err);
-        }
-    };
 
-    // Handle filter kategori buku change
-    const handleFilterKategoriChange = (value) => {
-        setFilterKategoriBuku(value);
-        searchBuku(searchQuery, value);
-    };
 
     const viewBookProfile = async (bookId) => {
         try {
@@ -349,35 +314,97 @@ export default function Dashboard() {
         }
     };
 
-    // --- LOGIC STOK BUKU ---
-    const openStockModal = (book) => {
-        setSelectedBookForStock(book);
-        setStokInput({ jumlah: '', tipe: 'tambah' });
-        setShowStockModal(true);
+    // --- LOGIC EDIT & STOK BUKU ---
+    const openEditModal = (book) => {
+        // Get fresh data from books state to ensure we have latest stock info
+        const freshBook = books.find(b => b.id === book.id) || book;
+        console.log(`\ud83d\udccb Modal dibuka untuk buku ID ${freshBook.id}, Stok saat ini: ${freshBook.stok}`);
+        
+        setEditBookData({
+            id: freshBook.id,
+            judul: freshBook.judul,
+            penulis: freshBook.penulis,
+            penerbit: freshBook.penerbit || '',
+            kategori: freshBook.kategori || '',
+            tahun_terbit: freshBook.tahun_terbit || ''
+        });
+        setSelectedBookForStock(freshBook);
+        console.log('RESET stokInput to empty');
+        
+        // Set tipe based on whether stok is null
+        const isStokNull = freshBook.stok === null || freshBook.stok === undefined;
+        setStokInput({ jumlah: '', tipe: isStokNull ? 'set' : 'tambah' });
+        setShowEditModal(true);
     };
 
-    const updateBookStock = async () => {
-        if (!stokInput.jumlah || stokInput.jumlah < 1) {
-            alert('Masukkan jumlah yang valid (minimal 1)');
+    const editBuku = async () => {
+        if (!editBookData.judul.trim() || !editBookData.penulis.trim()) {
+            alert('Judul dan Penulis harus diisi!');
             return;
         }
 
         try {
-            const res = await axios.put(`http://localhost:5000/books/${selectedBookForStock.id}/update-stok`, {
-                jumlah: parseInt(stokInput.jumlah),
-                tipe: stokInput.tipe
+            console.log('📝 Update buku dengan ID:', editBookData.id);
+            console.log('📦 Stok Input State:', stokInput);
+            console.log('📚 Current stok from selectedBookForStock:', selectedBookForStock?.stok);
+            
+            // Update buku data - PENTING: include stok to preserve it!
+            await axios.put(`http://localhost:5000/books/${editBookData.id}`, {
+                judul: editBookData.judul.trim(),
+                penulis: editBookData.penulis.trim(),
+                penerbit: editBookData.penerbit.trim() || null,
+                kategori: editBookData.kategori || null,
+                tahun_terbit: editBookData.tahun_terbit || null,
+                stok: selectedBookForStock?.stok  // CRITICAL: Don't lose stok value!
             });
 
-            alert(`✅ ${res.data.message}\n\nStok Lama: ${res.data.stok_lama}\nStok Baru: ${res.data.stok_baru}`);
-            setShowStockModal(false);
+            console.log('✅ Buku data updated');
+
+            // Update stok if ada input
+            const stokJumlah = parseInt(stokInput.jumlah);
+            console.log('🔢 Parsed stok jumlah:', stokJumlah, 'isNaN:', isNaN(stokJumlah), 'tipe:', stokInput.tipe);
+            console.log('📚 selectedBookForStock.stok:', selectedBookForStock?.stok, 'type:', typeof selectedBookForStock?.stok);
+            
+            if (!isNaN(stokJumlah) && stokJumlah >= 0) {
+                // Check validation based on whether stok is null or not
+                const isStokNull = selectedBookForStock?.stok === null || selectedBookForStock?.stok === undefined;
+                const isSettingInitialValue = stokInput.tipe === 'set';
+                
+                // Can't do tambah/kurangi if stok is null - must set first
+                if (isStokNull && !isSettingInitialValue) {
+                    alert('❌ Stok buku belum diinisialisasi!\n\nSilakan masukkan stok awal buku di field "Stok Awal" terlebih dahulu sebelum melakukan perubahan stok.');
+                    return;
+                }
+                
+                // For regular tambah/kurangi operations, need at least 1
+                if (!isSettingInitialValue && stokJumlah < 1) {
+                    alert('❌ Jumlah harus minimal 1 untuk operasi Tambah/Kurangi stok');
+                    return;
+                }
+                
+                console.log(`📤 Mengirim update stok: jumlah=${stokJumlah}, tipe=${stokInput.tipe}, stok_saat_ini=${selectedBookForStock?.stok}`);
+                const response = await axios.put(`http://localhost:5000/books/${editBookData.id}/update-stok`, {
+                    jumlah: stokJumlah,
+                    tipe: stokInput.tipe
+                });
+                console.log('📥 Response dari server:', response.data);
+                alert(`✅ ${response.data.message}\n\nStok Lama: ${response.data.stok_lama}\nStok Baru: ${response.data.stok_baru}`);
+            } else {
+                console.log('⏭️ Skip stok update - tidak ada input atau invalid');
+            }
+
+            alert('✅ Buku berhasil diperbarui!');
+            setShowEditModal(false);
             setStokInput({ jumlah: '', tipe: 'tambah' });
             fetchData();
         } catch (err) {
             const errorMsg = err.response?.data?.message || err.message;
-            alert('❌ Gagal memperbarui stok: ' + errorMsg);
-            console.error('Stock update error:', err);
+            console.error('❌ Edit book error:', err);
+            console.error('Response data:', err.response?.data);
+            alert('❌ Gagal memperbarui buku: ' + errorMsg);
         }
     };
+
 
     // --- LOGIC OPEN LIBRARY ---
     const searchOpenLibrary = async (query) => {
@@ -407,7 +434,6 @@ export default function Dashboard() {
                 author: book.author,
                 publisher: book.publisher,
                 year: book.year,
-                genre: book.genre || 'Uncategorized',
                 cover_url: book.cover_url
             });
             alert(res.data.message);
@@ -423,10 +449,6 @@ export default function Dashboard() {
     };
 
     // --- LOGIC SISWA ---
-    // Hardcoded daftar kelas & jurusan
-    const DAFTAR_KELAS = ['X', 'XI', 'XII'];
-    const DAFTAR_JURUSAN = ['PPLG', 'AKL', 'TJKT', 'MPLB', 'DKV'];
-
     // Initialize daftar kelas & jurusan dengan nilai hardcoded
     useEffect(() => {
         setDaftarKelas(DAFTAR_KELAS);
@@ -749,10 +771,10 @@ export default function Dashboard() {
                         </li>
                         <li className="nav-item">
                             <button 
-                                className={`nav-link ${activeTab === 'laporan' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('laporan')}
+                                className={`nav-link ${activeTab === 'riwayat_transaksi' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('riwayat_transaksi')}
                             >
-                                📊 Laporan
+                                📜 Riwayat Transaksi
                             </button>
                         </li>
                         <li className="nav-item">
@@ -764,20 +786,6 @@ export default function Dashboard() {
                                 }}
                             >
                                 🖨️ Cetak Denda
-                            </button>
-                        </li>
-                        <li className="nav-item">
-                            <button 
-                                className={`nav-link ${activeTab === 'pending_returns' ? 'active' : ''}`}
-                                onClick={() => {
-                                    setActiveTab('pending_returns');
-                                    fetchPendingReturns();
-                                }}
-                            >
-                                🔄 Permintaan Pengembalian
-                                {pendingReturns.length > 0 && (
-                                    <span className="badge bg-danger ms-2">{pendingReturns.length}</span>
-                                )}
                             </button>
                         </li>
                     </ul>
@@ -802,21 +810,7 @@ export default function Dashboard() {
                                             onChange={(e) => searchBuku(e.target.value)}
                                         />
                                     </div>
-                                    <div className="col-md-5">
-                                        <label className="form-label fw-bold">📚 Kategori</label>
-                                        <select 
-                                            id="filterKategoriBuku"
-                                            name="filterKategoriBuku"
-                                            className="form-select form-select-lg"
-                                            value={filterKategoriBuku}
-                                            onChange={(e) => handleFilterKategoriChange(e.target.value)}
-                                        >
-                                            <option value="">Semua Kategori</option>
-                                            {daftarKategoriBuku.map(kat => (
-                                                <option key={kat} value={kat}>{kat}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+
                                 </div>
 
                                 {books.length === 0 ? (
@@ -878,7 +872,7 @@ export default function Dashboard() {
                                                             <strong>Penerbit:</strong> {book.penerbit || '-'}
                                                         </p>
                                                         <p className="card-text small mb-2">
-                                                            <strong>Kategori:</strong> <span className="badge bg-info">{book.kategori || 'Fiksi'}</span>
+                                                            <strong>Kategori:</strong> <span className={`badge ${book.kategori ? 'bg-info' : 'bg-secondary'}`}>{book.kategori || '-'}</span>
                                                         </p>
                                                         <p className="card-text small mb-3">
                                                             <strong>Tahun:</strong> {book.tahun_terbit || '-'}
@@ -958,7 +952,6 @@ export default function Dashboard() {
                                                         <th>Penulis</th>
                                                         <th>Penerbit</th>
                                                         <th>Tahun</th>
-                                                        <th>Genre</th>
                                                         <th>Aksi</th>
                                                     </tr>
                                                 </thead>
@@ -981,7 +974,6 @@ export default function Dashboard() {
                                                             <td>{book.author || '-'}</td>
                                                             <td>{book.publisher || '-'}</td>
                                                             <td>{book.year || '-'}</td>
-                                                            <td><small>{book.genre || 'Uncategorized'}</small></td>
                                                             <td>
                                                                 <button 
                                                                     onClick={() => importFromOpenLib(book)} 
@@ -1037,14 +1029,19 @@ export default function Dashboard() {
                                     </div>
                                     <div className="col-md-6">
                                         <label htmlFor="kategoriBuku" className="form-label">Kategori</label>
-                                        <input 
+                                        <select 
                                             id="kategoriBuku"
                                             name="kategoriBuku"
-                                            className="form-control" 
-                                            placeholder="ex: Fiksi, Non-Fiksi, Pelajaran"
+                                            className="form-select" 
                                             value={newBook.kategori} 
-                                            onChange={e => setNewBook({...newBook, kategori: e.target.value})} 
-                                        />
+                                            onChange={e => setNewBook({...newBook, kategori: e.target.value})}
+                                            required
+                                        >
+                                            <option value="">-- Pilih Kategori --</option>
+                                            {DAFTAR_KATEGORI.map(kat => (
+                                                <option key={kat} value={kat}>{kat}</option>
+                                            ))}
+                                        </select>
                                     </div>
                                     <div className="col-md-3">
                                         <label htmlFor="tahunTerbit" className="form-label">Tahun Terbit</label>
@@ -1101,16 +1098,16 @@ export default function Dashboard() {
                                                         <td><strong>{book.judul}</strong></td>
                                                         <td>{book.penulis}</td>
                                                         <td>{book.penerbit || '-'}</td>
-                                                        <td><span className="badge bg-info">{book.kategori || 'Fiksi'}</span></td>
+                                                        <td><span className={`badge ${book.kategori ? 'bg-info' : 'bg-secondary'}`}>{book.kategori || '-'}</span></td>
                                                         <td>{book.tahun_terbit || '-'}</td>
                                                         <td><span className="badge bg-primary">{book.stok}</span></td>
                                                         <td>
                                                             <button 
-                                                                onClick={() => openStockModal(book)} 
-                                                                className="btn btn-sm btn-warning me-2"
-                                                                title="Tambah atau kurangi stok"
+                                                                onClick={() => openEditModal(book)} 
+                                                                className="btn btn-sm btn-primary me-2"
+                                                                title="Edit buku dan kelola stok"
                                                             >
-                                                                📦 Stok
+                                                                ✏️ Edit
                                                             </button>
                                                             <button 
                                                                 onClick={() => hapusBuku(book.id)} 
@@ -1335,56 +1332,6 @@ export default function Dashboard() {
                             </div>
                         )}
 
-                        {/* Laporan - Report Transaksi */}
-                        {activeTab === 'laporan' && (
-                            <div className="card-body">
-                                <h5 className="card-title mb-3">Laporan Transaksi Peminjaman</h5>
-                                <div className="table-responsive">
-                                    <table className="table table-hover">
-                                        <thead>
-                                            <tr>
-                                                <th>Siswa</th>
-                                                <th>Buku</th>
-                                                <th>Tanggal Pinjam</th>
-                                                <th>Tanggal Kembali</th>
-                                                <th>Status</th>
-                                                <th>Denda</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {transactions.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan="6" className="text-center text-muted py-4">
-                                                        Belum ada transaksi peminjaman.
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                transactions.map(t => (
-                                                    <tr key={t.id}>
-                                                        <td>{t.nama_lengkap}</td>
-                                                        <td>{t.judul}</td>
-                                                        <td>{new Date(t.tanggal_pinjam).toLocaleDateString('id-ID')}</td>
-                                                        <td>{t.tanggal_kembali ? new Date(t.tanggal_kembali).toLocaleDateString('id-ID') : '-'}</td>
-                                                        <td>
-                                                            <span className={`badge ${t.status === 'dipinjam' ? 'bg-danger' : 'bg-success'}`}>
-                                                                {t.status === 'dipinjam' ? '📤 Dipinjam' : '📥 Dikembalikan'}
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            {t.denda && t.denda > 0 ? (
-                                                                <span className="text-danger fw-bold">Rp {t.denda.toLocaleString('id-ID')}</span>
-                                                            ) : (
-                                                                <span className="text-success">-</span>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                ))
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        )}
 
                         {/* Cetak Denda - Print Late Fees */}
                         {activeTab === 'cetak_denda' && (
@@ -1512,71 +1459,108 @@ export default function Dashboard() {
                             </div>
                         )}
 
-                        {/* Pending Returns Tab */}
-                        {activeTab === 'pending_returns' && (
+                        {/* Riwayat Transaksi - Complete Transaction History */}
+                        {activeTab === 'riwayat_transaksi' && (
                             <div className="card-body">
-                                <h5 className="card-title mb-4">🔄 Permintaan Pengembalian Buku</h5>
+                                <h5 className="card-title mb-4">📜 Riwayat Transaksi Lengkap</h5>
                                 
-                                {pendingReturnsLoading ? (
-                                    <div className="text-center">
-                                        <div className="spinner-border text-primary" role="status">
-                                            <span className="visually-hidden">Loading...</span>
-                                        </div>
-                                    </div>
-                                ) : pendingReturns.length === 0 ? (
-                                    <div className="alert alert-info">
-                                        ✅ Tidak ada permintaan pengembalian buku yang menunggu konfirmasi.
-                                    </div>
-                                ) : (
-                                    <div className="table-responsive">
-                                        <table className="table table-hover table-striped">
-                                            <thead style={{ backgroundColor: '#212529', color: '#fff' }}>
+                                <div className="table-responsive">
+                                    <table className="table table-hover table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>No</th>
+                                                <th>Siswa</th>
+                                                <th>Buku</th>
+                                                <th>Tanggal Pinjam</th>
+                                                <th>Tanggal Kembali</th>
+                                                <th>Status</th>
+                                                <th>Denda</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {transactions.length === 0 ? (
                                                 <tr>
-                                                    <th>No.</th>
-                                                    <th>Nama Siswa</th>
-                                                    <th>Kelas</th>
-                                                    <th>Judul Buku</th>
-                                                    <th>Penulis</th>
-                                                    <th>Tanggal Pinjam</th>
-                                                    <th>Tanggal Permintaan</th>
-                                                    <th>Aksi</th>
+                                                    <td colSpan="7" className="text-center text-muted py-4">
+                                                        Belum ada riwayat transaksi.
+                                                    </td>
                                                 </tr>
-                                            </thead>
-                                            <tbody>
-                                                {pendingReturns.map((ret, idx) => (
-                                                    <tr key={ret.id}>
-                                                        <td>{idx + 1}.</td>
-                                                        <td><strong>{ret.nama_lengkap}</strong></td>
-                                                        <td>{ret.kelas || '-'}</td>
-                                                        <td><strong>{ret.judul}</strong></td>
-                                                        <td>{ret.penulis}</td>
-                                                        <td>{new Date(ret.tanggal_pinjam).toLocaleDateString('id-ID')}</td>
+                                            ) : (
+                                                transactions.map((t, index) => (
+                                                    <tr key={t.id}>
+                                                        <td>{index + 1}</td>
+                                                        <td><strong>{t.nama_lengkap}</strong></td>
+                                                        <td>{t.judul}</td>
+                                                        <td>{new Date(t.tanggal_pinjam).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
                                                         <td>
-                                                            {ret.tanggal_permintaan_kembali ? (
-                                                                <>
-                                                                    {new Date(ret.tanggal_permintaan_kembali).toLocaleDateString('id-ID')}
-                                                                    <br/>
-                                                                    <small className="text-muted">{ret.waktu_permintaan_kembali || ''}</small>
-                                                                </>
-                                                            ) : '-'}
+                                                            {t.tanggal_kembali 
+                                                                ? new Date(t.tanggal_kembali).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' })
+                                                                : <span className="text-muted">-</span>
+                                                            }
                                                         </td>
                                                         <td>
-                                                            <button
-                                                                onClick={() => confirmReturnBook(ret)}
-                                                                className="btn btn-sm btn-success"
-                                                                title="Konfirmasi pengembalian buku"
-                                                            >
-                                                                ✅ Konfirmasi
-                                                            </button>
+                                                            {t.status === 'dipinjam' ? (
+                                                                <span className="badge bg-danger">📤 Dipinjam</span>
+                                                            ) : t.status === 'kembali' ? (
+                                                                <span className="badge bg-success">📥 Dikembalikan</span>
+                                                            ) : t.status === 'diminta_kembali' ? (
+                                                                <span className="badge bg-warning">⏳ Diminta Kembali</span>
+                                                            ) : (
+                                                                <span className="badge bg-secondary">{t.status}</span>
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            {t.denda && t.denda > 0 ? (
+                                                                <span className="badge bg-danger">Rp {t.denda.toLocaleString('id-ID')}</span>
+                                                            ) : (
+                                                                <span className="text-muted">-</span>
+                                                            )}
                                                         </td>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Summary Statistics */}
+                                <div className="row mt-4 pt-3" style={{borderTop: '2px solid #dee2e6'}}>
+                                    <div className="col-md-3">
+                                        <div className="card bg-light">
+                                            <div className="card-body text-center">
+                                                <h6 className="text-muted mb-2">Total Transaksi</h6>
+                                                <h4 className="mb-0">{transactions.length}</h4>
+                                            </div>
+                                        </div>
                                     </div>
-                                )}
+                                    <div className="col-md-3">
+                                        <div className="card bg-light">
+                                            <div className="card-body text-center">
+                                                <h6 className="text-muted mb-2">Sedang Dipinjam</h6>
+                                                <h4 className="mb-0 text-danger">{transactions.filter(t => t.status === 'dipinjam').length}</h4>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="col-md-3">
+                                        <div className="card bg-light">
+                                            <div className="card-body text-center">
+                                                <h6 className="text-muted mb-2">Sudah Dikembalikan</h6>
+                                                <h4 className="mb-0 text-success">{transactions.filter(t => t.status === 'kembali').length}</h4>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="col-md-3">
+                                        <div className="card bg-light">
+                                            <div className="card-body text-center">
+                                                <h6 className="text-muted mb-2">Total Denda</h6>
+                                                <h4 className="mb-0 text-warning">Rp {transactions.reduce((sum, t) => sum + (t.denda || 0), 0).toLocaleString('id-ID')}</h4>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
+
+
                     </div>
                 </div>
             )}
@@ -1721,7 +1705,7 @@ export default function Dashboard() {
                                 <h3>{selectedBook.judul}</h3>
                                 <p><strong>Penulis:</strong> {selectedBook.penulis}</p>
                                 <p><strong>Penerbit:</strong> {selectedBook.penerbit || '-'}</p>
-                                <p><strong>Kategori:</strong> <span className="badge bg-info">{selectedBook.kategori || 'Fiksi'}</span></p>
+                                <p><strong>Kategori:</strong> <span className={`badge ${selectedBook.kategori ? 'bg-info' : 'bg-secondary'}`}>{selectedBook.kategori || '-'}</span></p>
                                 <p><strong>Tahun Terbit:</strong> {selectedBook.tahun_terbit || '-'}</p>
                                 <p><strong>Stok Tersedia:</strong> <span className="badge bg-primary">{selectedBook.stok}</span></p>
                             </div>
@@ -1742,74 +1726,157 @@ export default function Dashboard() {
                 </div>
             )}
 
-            {/* Stock Management Modal */}
-            {showStockModal && selectedBookForStock && (
+            {/* Edit Book Modal */}
+            {showEditModal && editBookData && (
                 <div className="modal d-block" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.6)'}}>
-                    <div className="modal-dialog">
+                    <div className="modal-dialog modal-lg">
                         <div className="modal-content">
-                            <div className="modal-header bg-warning">
-                                <h5 className="modal-title">📦 Kelola Stok Buku</h5>
+                            <div className="modal-header bg-primary text-white">
+                                <h5 className="modal-title">✏️ Edit Buku</h5>
                                 <button 
                                     type="button" 
-                                    className="btn-close" 
-                                    onClick={() => setShowStockModal(false)}
+                                    className="btn-close btn-close-white" 
+                                    onClick={() => setShowEditModal(false)}
                                 ></button>
                             </div>
                             <div className="modal-body">
-                                <div className="mb-3">
-                                    <p className="text-muted">
-                                        <strong>Judul Buku:</strong> {selectedBookForStock.judul}
-                                    </p>
-                                    <p className="text-muted">
-                                        <strong>Stok Saat Ini:</strong> <span className="badge bg-primary">{selectedBookForStock.stok}</span>
-                                    </p>
+                                <div className="row g-3 mb-4">
+                                    <div className="col-md-6">
+                                        <label htmlFor="editJudul" className="form-label fw-bold">Judul Buku</label>
+                                        <input 
+                                            id="editJudul"
+                                            type="text" 
+                                            className="form-control" 
+                                            value={editBookData.judul}
+                                            onChange={(e) => setEditBookData({...editBookData, judul: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="col-md-6">
+                                        <label htmlFor="editPenulis" className="form-label fw-bold">Penulis</label>
+                                        <input 
+                                            id="editPenulis"
+                                            type="text" 
+                                            className="form-control" 
+                                            value={editBookData.penulis}
+                                            onChange={(e) => setEditBookData({...editBookData, penulis: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="col-md-6">
+                                        <label htmlFor="editPenerbit" className="form-label fw-bold">Penerbit</label>
+                                        <input 
+                                            id="editPenerbit"
+                                            type="text" 
+                                            className="form-control" 
+                                            value={editBookData.penerbit}
+                                            onChange={(e) => setEditBookData({...editBookData, penerbit: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="col-md-6">
+                                        <label htmlFor="editKategori" className="form-label fw-bold">Kategori</label>
+                                        <select 
+                                            id="editKategori"
+                                            className="form-select" 
+                                            value={editBookData.kategori}
+                                            onChange={(e) => setEditBookData({...editBookData, kategori: e.target.value})}
+                                        >
+                                            <option value="">-- Pilih Kategori --</option>
+                                            {DAFTAR_KATEGORI.map(kat => (
+                                                <option key={kat} value={kat}>{kat}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="col-md-6">
+                                        <label htmlFor="editTahunTerbit" className="form-label fw-bold">Tahun Terbit</label>
+                                        <input 
+                                            id="editTahunTerbit"
+                                            type="text" 
+                                            className="form-control" 
+                                            value={editBookData.tahun_terbit}
+                                            onChange={(e) => setEditBookData({...editBookData, tahun_terbit: e.target.value})}
+                                        />
+                                    </div>
                                 </div>
 
-                                <div className="mb-3">
-                                    <label className="form-label fw-bold">📥 Pilih Aksi</label>
-                                    <select 
-                                        className="form-select form-select-lg"
-                                        value={stokInput.tipe}
-                                        onChange={(e) => setStokInput({...stokInput, tipe: e.target.value})}
-                                    >
-                                        <option value="tambah">⬆️ Tambah Stok</option>
-                                        <option value="kurangi">⬇️ Kurangi Stok</option>
-                                    </select>
-                                </div>
-
-                                <div className="mb-3">
-                                    <label className="form-label fw-bold">🔢 Jumlah</label>
-                                    <input 
-                                        type="number" 
-                                        className="form-control form-control-lg" 
-                                        placeholder="Masukkan jumlah (minimal 1)"
-                                        value={stokInput.jumlah}
-                                        onChange={(e) => setStokInput({...stokInput, jumlah: e.target.value})}
-                                        min="1"
-                                    />
-                                </div>
-
-                                <div className="alert alert-info">
-                                    {stokInput.tipe === 'tambah' 
-                                        ? `Stok akan berubah dari ${selectedBookForStock.stok} menjadi ${parseInt(selectedBookForStock.stok) + (parseInt(stokInput.jumlah) || 0)}`
-                                        : `Stok akan berubah dari ${selectedBookForStock.stok} menjadi ${parseInt(selectedBookForStock.stok) - (parseInt(stokInput.jumlah) || 0)}`
-                                    }
+                                <hr className="my-4" />
+                                <h6 className="mb-3">📦 Kelola Stok</h6>
+                                
+                                <div className="row g-3">
+                                    <div className="col-md-12">
+                                        {selectedBookForStock?.stok === null || selectedBookForStock?.stok === undefined ? (
+                                            <div className="alert alert-warning mb-3" style={{marginBottom: '0 !important'}}>
+                                                ⚠️ <strong>Perhatian:</strong> Stok awal buku belum diatur. Silakan masukkan nilai stok awal di bawah.
+                                            </div>
+                                        ) : (
+                                            <p className="text-muted">
+                                                <strong>Stok Saat Ini:</strong> <span className="badge bg-primary">{selectedBookForStock?.stok}</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="col-md-6">
+                                        <label htmlFor="stokTipe" className="form-label fw-bold">
+                                            {selectedBookForStock?.stok === null || selectedBookForStock?.stok === undefined ? 'Atur Stok' : 'Pilih Aksi'}
+                                        </label>
+                                        <select 
+                                            id="stokTipe"
+                                            className="form-select"
+                                            value={stokInput.tipe}
+                                            onChange={(e) => setStokInput({...stokInput, tipe: e.target.value})}
+                                            disabled={selectedBookForStock?.stok === null || selectedBookForStock?.stok === undefined ? false : false}
+                                        >
+                                            {selectedBookForStock?.stok === null || selectedBookForStock?.stok === undefined ? (
+                                                <option value="set">📝 Atur Stok Awal</option>
+                                            ) : (
+                                                <>
+                                                    <option value="tambah">⬆️ Tambah Stok</option>
+                                                    <option value="kurangi">⬇️ Kurangi Stok</option>
+                                                </>
+                                            )}
+                                        </select>
+                                    </div>
+                                    <div className="col-md-6">
+                                        <label htmlFor="stokJumlah" className="form-label fw-bold">
+                                            {selectedBookForStock?.stok === null || selectedBookForStock?.stok === undefined ? 'Stok Awal' : 'Jumlah'}
+                                        </label>
+                                        <input 
+                                            id="stokJumlah"
+                                            type="number" 
+                                            className="form-control" 
+                                            placeholder={selectedBookForStock?.stok === null || selectedBookForStock?.stok === undefined ? 'Masukkan stok awal (minimal 0)' : 'Masukkan jumlah (minimal 1)'}
+                                            value={stokInput.jumlah}
+                                            onChange={(e) => {
+                                                console.log('📝 Input value changed to:', e.target.value);
+                                                setStokInput({...stokInput, jumlah: e.target.value});
+                                            }}
+                                            min={selectedBookForStock?.stok === null || selectedBookForStock?.stok === undefined ? '0' : '1'}
+                                        />
+                                    </div>
+                                    <div className="col-md-12">
+                                        <div className="alert alert-info mb-0">
+                                            {selectedBookForStock?.stok === null || selectedBookForStock?.stok === undefined ? (
+                                                `Stok buku akan diatur menjadi ${parseInt(stokInput.jumlah) || 0}`
+                                            ) : (
+                                                stokInput.tipe === 'tambah' 
+                                                    ? `Stok akan berubah dari ${selectedBookForStock?.stok} menjadi ${parseInt(selectedBookForStock?.stok) + (parseInt(stokInput.jumlah) || 0)}`
+                                                    : `Stok akan berubah dari ${selectedBookForStock?.stok} menjadi ${parseInt(selectedBookForStock?.stok) - (parseInt(stokInput.jumlah) || 0)}`
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <div className="modal-footer">
                                 <button 
                                     type="button" 
                                     className="btn btn-secondary" 
-                                    onClick={() => setShowStockModal(false)}
+                                    onClick={() => setShowEditModal(false)}
                                 >
                                     Batal
                                 </button>
                                 <button 
                                     type="button" 
-                                    className="btn btn-success" 
-                                    onClick={updateBookStock}
+                                    className="btn btn-primary" 
+                                    onClick={editBuku}
                                 >
-                                    ✅ Perbarui Stok
+                                    ✅ Simpan Perubahan
                                 </button>
                             </div>
                         </div>
@@ -1838,6 +1905,14 @@ export default function Dashboard() {
                                 <span className="badge bg-warning text-dark ms-2">{myBorrowedBooks.length}</span>
                             </button>
                         </li>
+                        <li className="nav-item">
+                            <button 
+                                className={`nav-link ${activeTabSiswa === 'riwayat' ? 'active' : ''}`}
+                                onClick={() => setActiveTabSiswa('riwayat')}
+                            >
+                                📜 Riwayat Peminjaman
+                            </button>
+                        </li>
                     </ul>
 
                     <div className="card border-0 mt-3">
@@ -1860,21 +1935,7 @@ export default function Dashboard() {
                                             onChange={(e) => searchBuku(e.target.value)}
                                         />
                                     </div>
-                                    <div className="col-md-5">
-                                        <label className="form-label fw-bold">📚 Kategori</label>
-                                        <select 
-                                            id="filterKategoriBukuSiswa"
-                                            name="filterKategoriBukuSiswa"
-                                            className="form-select form-select-lg"
-                                            value={filterKategoriBuku}
-                                            onChange={(e) => handleFilterKategoriChange(e.target.value)}
-                                        >
-                                            <option value="">Semua Kategori</option>
-                                            {daftarKategoriBuku.map(kat => (
-                                                <option key={kat} value={kat}>{kat}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+
                                 </div>
 
                                 {books.length === 0 ? (
@@ -1936,7 +1997,7 @@ export default function Dashboard() {
                                                             <strong>Penerbit:</strong> {book.penerbit || '-'}
                                                         </p>
                                                         <p className="card-text small mb-2">
-                                                            <strong>Kategori:</strong> <span className="badge bg-info">{book.kategori || 'Fiksi'}</span>
+                                                            <strong>Kategori:</strong> <span className={`badge ${book.kategori ? 'bg-info' : 'bg-secondary'}`}>{book.kategori || '-'}</span>
                                                         </p>
                                                         <p className="card-text small mb-3">
                                                             <strong>Tahun:</strong> {book.tahun_terbit || '-'}
@@ -1996,6 +2057,66 @@ export default function Dashboard() {
                                                             <span className="badge bg-danger">
                                                                 📤 Sedang Dipinjam
                                                             </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Riwayat Peminjaman Tab */}
+                        {activeTabSiswa === 'riwayat' && (
+                            <div className="card-body">
+                                <h5 className="card-title mb-4">📜 Riwayat Peminjaman</h5>
+                                
+                                {myBorrowingHistory.length === 0 ? (
+                                    <div className="alert alert-info">
+                                        Belum ada riwayat peminjaman.
+                                    </div>
+                                ) : (
+                                    <div className="table-responsive">
+                                        <table className="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>Judul Buku</th>
+                                                    <th>Penulis</th>
+                                                    <th>Kategori</th>
+                                                    <th>Tanggal Pinjam</th>
+                                                    <th>Tanggal Kembali</th>
+                                                    <th>Status</th>
+                                                    <th>Denda</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {myBorrowingHistory.map(h => (
+                                                    <tr key={h.id}>
+                                                        <td><strong>{h.judul}</strong></td>
+                                                        <td>{h.penulis}</td>
+                                                        <td>
+                                                            <span className="badge bg-secondary">{h.kategori}</span>
+                                                        </td>
+                                                        <td>{new Date(h.tanggal_pinjam).toLocaleDateString('id-ID')}</td>
+                                                        <td>{h.tanggal_kembali ? new Date(h.tanggal_kembali).toLocaleDateString('id-ID') : '-'}</td>
+                                                        <td>
+                                                            {h.status === 'dipinjam' ? (
+                                                                <span className="badge bg-danger">📤 Dipinjam</span>
+                                                            ) : h.status === 'kembali' ? (
+                                                                <span className="badge bg-success">📥 Dikembalikan</span>
+                                                            ) : h.status === 'diminta_kembali' ? (
+                                                                <span className="badge bg-warning">⏳ Diminta Kembali</span>
+                                                            ) : (
+                                                                <span className="badge bg-secondary">{h.status}</span>
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            {h.denda > 0 ? (
+                                                                <span className="badge bg-danger">Rp {h.denda.toLocaleString('id-ID')}</span>
+                                                            ) : (
+                                                                <span className="text-muted">-</span>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 ))}

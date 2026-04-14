@@ -29,656 +29,8 @@ app.post('/login', async (req, res) => {
     } catch (err) { res.status(500).json(err); }
 });
 
-// --- 2. MANAJEMEN BUKU (CRUD) ---
-// Get Semua Buku
-app.get('/books', async (req, res) => {
-    try {
-        const [rows] = await db.query('SELECT * FROM books ORDER BY judul ASC');
-        res.json(rows);
-    } catch (err) { res.status(500).json(err); }
-});
-
-// Ambil daftar kategori buku
-app.get('/books/get-kategori', async (req, res) => {
-    try {
-        // Daftar kategori buku yang tersedia
-        const kategoriList = [
-            'Fiksi',
-            'Non-Fiksi',
-            'Romantis',
-            'Misteri',
-            'Sains & Teknologi',
-            'Sejarah',
-            'Biografi',
-            'Anak-anak',
-            'Komik',
-            'Puisi & Sastra',
-            'Pendidikan',
-            'Agama',
-            'Psikologi',
-            'Self-Help',
-            'Kuliner',
-            'Perjalanan',
-            'Seni & Desain',
-            'Lainnya'
-        ];
-        res.json(kategoriList);
-    } catch (err) {
-        console.error('Get kategori error:', err);
-        res.status(500).json({ message: 'Error fetching kategori', error: err.message });
-    }
-});
-
-// Category mapping: Map Open Library data to physical book types
-const CATEGORY_MAPPING = {
-    // Physical book types identification
-    'comic': 'Komik',
-    'comics': 'Komik',
-    'comic books': 'Komik',
-    'manga': 'Komik',
-    'graphic novel': 'Komik',
-    
-    'magazine': 'Majalah',
-    'magazines': 'Majalah',
-    'journal': 'Jurnal',
-    'journals': 'Jurnal',
-    'periodical': 'Majalah',
-    
-    'biography': 'Biografi',
-    'autobiography': 'Biografi',
-    'memoir': 'Biografi',
-    'biographical': 'Biografi',
-    'life story': 'Biografi',
-    
-    'poetry': 'Puisi & Sastra',
-    'poems': 'Puisi & Sastra',
-    'short stories': 'Puisi & Sastra',
-    'drama': 'Puisi & Sastra',
-    'plays': 'Puisi & Sastra',
-    'literature': 'Puisi & Sastra',
-    
-    'reference': 'Referensi',
-    'encyclopedia': 'Referensi',
-    'dictionary': 'Referensi',
-    'textbook': 'Pendidikan',
-    'education': 'Pendidikan',
-    'tutorial': 'Pendidikan',
-    'guide': 'Panduan & Manual',
-    'manual': 'Panduan & Manual',
-    'handbook': 'Panduan & Manual',
-    
-    'art': 'Seni & Fotografi',
-    'design': 'Seni & Fotografi',
-    'photography': 'Seni & Fotografi',
-    'architecture': 'Seni & Fotografi',
-    'painting': 'Seni & Fotografi',
-    'illustration': 'Seni & Fotografi'
-};
-
-// Genre mapping: Map Open Library subjects to story THEMES (not physical types)
-const GENRE_MAPPING = {
-    // Horror/Dark themes
-    'horror': 'Horor',
-    'scary': 'Horor',
-    'paranormal': 'Horor',
-    'supernatural': 'Horor',
-    'ghost': 'Horor',
-    'vampire': 'Horor',
-    'werewolf': 'Horor',
-    'dark': 'Horor',
-    
-    // Romance themes
-    'romance': 'Romance',
-    'love': 'Romance',
-    'romantic': 'Romance',
-    'love stories': 'Romance',
-    'relationship': 'Romance',
-    
-    // Science Fiction themes
-    'science fiction': 'Sci-Fi',
-    'sci-fi': 'Sci-Fi',
-    'sci fi': 'Sci-Fi',
-    'futuristic': 'Sci-Fi',
-    'space': 'Sci-Fi',
-    'cyberpunk': 'Sci-Fi',
-    'dystopian': 'Sci-Fi',
-    'utopian': 'Sci-Fi',
-    'alien': 'Sci-Fi',
-    'robot': 'Sci-Fi',
-    
-    // Fantasy themes
-    'fantasy': 'Fantasi',
-    'magical': 'Fantasi',
-    'magic': 'Fantasi',
-    'wizard': 'Fantasi',
-    'witch': 'Fantasi',
-    'dragon': 'Fantasi',
-    'elf': 'Fantasi',
-    'quest': 'Fantasi',
-    'epic fantasy': 'Fantasi',
-    'dark fantasy': 'Dark Fantasy',
-    'sword and sorcery': 'Fantasi',
-    
-    // Mystery/Thriller themes
-    'mystery': 'Misteri',
-    'detective': 'Misteri',
-    'crime': 'Misteri',
-    'detective fiction': 'Misteri',
-    'murder': 'Misteri',
-    'thriller': 'Thriller',
-    'suspense': 'Thriller',
-    'action': 'Thriller',
-    'spy': 'Thriller',
-    'adventure': 'Petualangan',
-    'adventure fiction': 'Petualangan',
-    'exploration': 'Petualangan',
-    
-    // Drama themes
-    'drama': 'Drama',
-    'emotional': 'Drama',
-    'family saga': 'Drama',
-    'coming of age': 'Drama',
-    
-    // Comedy themes
-    'comedy': 'Komedi',
-    'humor': 'Komedi',
-    'humorous': 'Komedi',
-    'funny': 'Komedi',
-    'satirical': 'Komedi',
-    'satire': 'Komedi',
-    
-    // Historical theme
-    'historical fiction': 'Historical Fiction',
-    'historical': 'Historical Fiction',
-    'history': 'Historical Fiction',
-    
-    // Educational/Non-fiction themes
-    'science': 'Sains & Teknologi',
-    'technology': 'Sains & Teknologi',
-    'physics': 'Sains & Teknologi',
-    'chemistry': 'Sains & Teknologi',
-    'biology': 'Sains & Teknologi',
-    'mathematics': 'Sains & Teknologi',
-    'engineering': 'Sains & Teknologi',
-    'programming': 'Sains & Teknologi',
-    'computer science': 'Sains & Teknologi',
-    
-    'psychology': 'Psikologi',
-    'philosophy': 'Filosofi',
-    'spirituality': 'Filosofi',
-    'religion': 'Filosofi',
-    
-    'business': 'Bisnis & Ekonomi',
-    'economics': 'Bisnis & Ekonomi',
-    'finance': 'Bisnis & Ekonomi',
-    'entrepreneurship': 'Bisnis & Ekonomi',
-    'self-help': 'Self-Help',
-    'self improvement': 'Self-Help',
-    'personal development': 'Self-Help',
-    'motivation': 'Self-Help',
-    'wellness': 'Self-Help',
-    'health': 'Kesehatan & Wellness',
-    'fitness': 'Kesehatan & Wellness',
-    'diet': 'Kesehatan & Wellness',
-    'nutrition': 'Kesehatan & Wellness',
-    'cooking': 'Kuliner',
-    'recipes': 'Kuliner',
-    'food': 'Kuliner',
-    'culinary': 'Kuliner',
-    
-    'travel': 'Perjalanan',
-    'adventure': 'Petualangan',
-    
-    // Children
-    'children': 'Anak-anak',
-    'children\'s': 'Anak-anak',
-    'kids': 'Anak-anak',
-    'juvenile': 'Anak-anak',
-    'young adult': 'Anak-anak'
-};
-
-
-// Helper function to map Open Library subject to CATEGORY (physical book type)
-function mapOpenLibSubjectToCategory(subject) {
-    if (!subject) return null;
-    
-    const lowerSubject = subject.toLowerCase().trim();
-    
-    // Direct match
-    if (CATEGORY_MAPPING[lowerSubject]) {
-        return CATEGORY_MAPPING[lowerSubject];
-    }
-    
-    // Partial match - check if any mapping keyword is contained in the subject
-    for (const [key, category] of Object.entries(CATEGORY_MAPPING)) {
-        if (lowerSubject.includes(key)) {
-            return category;
-        }
-    }
-    
-    return null; // No match found
-}
-
-// Helper function to get the best CATEGORY ID from Open Library data
-// Returns NULL if no category can be determined (no forced defaults)
-async function getBestCategoryIdFromOpenLib(doc, db) {
-    let categoryId = null;
-    let categoryName = null;
-    let foundCategories = [];
-    
-    const bookTitle = doc.title || 'Unknown';
-    console.log(`\n📦 Attempting to determine category (physical type) for: "${bookTitle}"`);
-    
-    // Try subject_facets first
-    if (doc.subject_facets && Array.isArray(doc.subject_facets) && doc.subject_facets.length > 0) {
-        for (const subject of doc.subject_facets) {
-            const mappedCategory = mapOpenLibSubjectToCategory(subject);
-            if (mappedCategory && !foundCategories.includes(mappedCategory)) {
-                foundCategories.push(mappedCategory);
-                console.log(`  ✓ Subject "${subject}" → Category "${mappedCategory}"`);
-            }
-        }
-    }
-    
-    // Try subject field
-    if (foundCategories.length === 0 && doc.subject && Array.isArray(doc.subject)) {
-        for (const subject of doc.subject) {
-            const mappedCategory = mapOpenLibSubjectToCategory(subject);
-            if (mappedCategory && !foundCategories.includes(mappedCategory)) {
-                foundCategories.push(mappedCategory);
-                console.log(`  ✓ Subject "${subject}" → Category "${mappedCategory}"`);
-            }
-        }
-    }
-    
-    // Use first found category if any
-    if (foundCategories.length > 0) {
-        categoryName = foundCategories[0];
-        console.log(`  🎯 Selected category: "${categoryName}"`);
-        
-        try {
-            const [rows] = await db.query('SELECT id FROM categories WHERE nama = ?', [categoryName]);
-            if (rows.length > 0) {
-                categoryId = rows[0].id;
-                console.log(`  🔗 Category ID: ${categoryId}`);
-            }
-        } catch (err) {
-            console.error(`  ⚠️ Error fetching category ID: ${err.message}`);
-            categoryId = null;
-            categoryName = null;
-        }
-    } else {
-        console.log(`  ℹ️ No specific category detected - will store as NULL`);
-    }
-    
-    return { id: categoryId, nama: categoryName };
-}
-
-// Helper function to map Open Library subject to local GENRE (story theme)
-function mapOpenLibSubjectToGenre(subject) {
-    if (!subject) return null;
-    
-    const lowerSubject = subject.toLowerCase().trim();
-    
-    // Direct match
-    if (GENRE_MAPPING[lowerSubject]) {
-        return GENRE_MAPPING[lowerSubject];
-    }
-    
-    // Partial match - check if any mapping keyword is contained in the subject
-    for (const [key, genre] of Object.entries(GENRE_MAPPING)) {
-        if (lowerSubject.includes(key)) {
-            return genre;
-        }
-    }
-    
-    return null; // No match found
-}
-
-// Helper function to get the best GENRE ID (story theme) from Open Library data
-// Returns NULL if no genre can be determined (no forced defaults)
-async function getBestGenreIdFromOpenLib(doc, db) {
-    let genreId = null;
-    let genreName = null;
-    let foundGenres = [];
-    
-    const bookTitle = doc.title || 'Unknown';
-    console.log(`\n🎭 Attempting to extract genres (story themes) for: "${bookTitle}"`);
-    
-    // Try subject_facets first (most reliable)
-    if (doc.subject_facets && Array.isArray(doc.subject_facets) && doc.subject_facets.length > 0) {
-        console.log(`  📚 Found subject_facets: ${doc.subject_facets.slice(0, 3).join(', ')}`);
-        for (const subject of doc.subject_facets) {
-            const mappedGenre = mapOpenLibSubjectToGenre(subject);
-            if (mappedGenre) {
-                foundGenres.push({ original: subject, mapped: mappedGenre });
-                console.log(`  ✓ Mapped "${subject}" → "${mappedGenre}"`);
-            }
-        }
-    }
-    
-    // Try subject field
-    if (foundGenres.length === 0 && doc.subject && Array.isArray(doc.subject) && doc.subject.length > 0) {
-        console.log(`  📚 Found subjects: ${doc.subject.slice(0, 3).join(', ')}`);
-        for (const subject of doc.subject) {
-            const mappedGenre = mapOpenLibSubjectToGenre(subject);
-            if (mappedGenre) {
-                foundGenres.push({ original: subject, mapped: mappedGenre });
-                console.log(`  ✓ Mapped "${subject}" → "${mappedGenre}"`);
-            }
-        }
-    }
-    
-    // If we found mapped genres, use the first one
-    if (foundGenres.length > 0) {
-        const selectedGenre = foundGenres[0].mapped;
-        genreName = selectedGenre;
-        console.log(`  🎯 Selected genre: "${selectedGenre}"`);
-        
-        // Get the genre_id from database
-        try {
-            const [rows] = await db.query('SELECT id FROM genres WHERE nama = ?', [selectedGenre]);
-            if (rows.length > 0) {
-                genreId = rows[0].id;
-                console.log(`  🔗 Genre ID: ${genreId}`);
-            }
-        } catch (err) {
-            console.error(`  ⚠️ Error fetching genre ID: ${err.message}`);
-            genreId = null;
-            genreName = null;
-        }
-    } else {
-        console.log(`  ℹ️ No genre themes detected - will store as NULL`);
-    }
-    
-    return { id: genreId, nama: genreName };
-}
-
-// Simplified function to get genre name from Open Library (for search results)
-function getGenreFromOpenLib(doc) {
-    let foundGenres = [];
-    const bookTitle = doc.title || 'Unknown';
-    
-    // Try subject_facets first
-    if (doc.subject_facets && Array.isArray(doc.subject_facets)) {
-        for (const subject of doc.subject_facets.slice(0, 3)) {
-            const mappedGenre = mapOpenLibSubjectToGenre(subject);
-            if (mappedGenre && !foundGenres.includes(mappedGenre)) {
-                foundGenres.push(mappedGenre);
-            }
-        }
-    }
-    
-    // Try subject field
-    if (foundGenres.length === 0 && doc.subject && Array.isArray(doc.subject)) {
-        for (const subject of doc.subject.slice(0, 3)) {
-            const mappedGenre = mapOpenLibSubjectToGenre(subject);
-            if (mappedGenre && !foundGenres.includes(mappedGenre)) {
-                foundGenres.push(mappedGenre);
-            }
-        }
-    }
-    
-    if (foundGenres.length === 0) {
-        console.log(`[Genre] "${bookTitle}" - NO GENRES FOUND`);
-        return 'Uncategorized';
-    }
-    
-    const result = foundGenres.join(', ');
-    console.log(`[Genre] "${bookTitle}" - ${result}`);
-    return result;
-}
-
-// ===== IMPROVED API ENDPOINTS (v2) =====
-
-// Get all genres
-app.get('/genres', async (req, res) => {
-    try {
-        const [genres] = await db.query(`
-            SELECT id, nama, deskripsi FROM genres 
-            ORDER BY nama ASC
-        `);
-        res.json(responses.success(genres, 'Genres retrieved successfully'));
-    } catch (err) {
-        console.error('Get genres error:', err);
-        res.status(500).json(responses.error('Failed to retrieve genres', 500));
-    }
-});
-
-// Get all books with pagination (improved)
-app.get('/books/v2/all', async (req, res) => {
-    try {
-        const { page = 1, limit = 20 } = req.query;
-        const { limit: pageLimit, offset } = pagination.getPaginationParams(page, limit);
-
-        const [books] = await db.query(`
-            SELECT 
-                b.id, b.judul, b.penulis, b.penerbit, b.tahun_terbit, 
-                b.stok, b.cover_url, b.kategori, b.genre_id,
-                g.nama as genre_nama, g.deskripsi as genre_deskripsi,
-                b.created_at, b.updated_at
-            FROM books b
-            LEFT JOIN genres g ON b.genre_id = g.id
-            ORDER BY b.updated_at DESC
-            LIMIT ? OFFSET ?
-        `, [pageLimit, offset]);
-
-        const [countResult] = await db.query('SELECT COUNT(*) as total FROM books');
-        const total = countResult[0].total;
-
-        res.json(responses.success({
-            data: books,
-            pagination: {
-                total,
-                page: parseInt(page),
-                limit: pageLimit,
-                pages: Math.ceil(total / pageLimit)
-            }
-        }, 'Books retrieved successfully'));
-    } catch (err) {
-        console.error('Get books error:', err);
-        res.status(500).json(responses.error('Failed to retrieve books', 500));
-    }
-});
-
-// Search books with genre filter (improved)
-app.get('/books/v2/search', async (req, res) => {
-    try {
-        const { keyword = '', genre_id = null, page = 1, limit = 20 } = req.query;
-        const { limit: pageLimit, offset } = pagination.getPaginationParams(page, limit);
-
-        const result = await dbHelpers.searchBooks(db, {
-            keyword,
-            genre_id: genre_id ? parseInt(genre_id) : null,
-            limit: pageLimit,
-            offset
-        });
-
-        res.json(responses.success(result, 'Search completed successfully'));
-    } catch (err) {
-        console.error('Search books error:', err);
-        res.status(500).json(responses.error('Failed to search books', 500));
-    }
-});
-
-// Get single book with full details (improved)
-app.get('/books/v2/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        
-        if (!id || isNaN(id)) {
-            return res.status(400).json(responses.error('Invalid book ID', 400));
-        }
-
-        const book = await dbHelpers.getBookWithGenre(db, parseInt(id));
-
-        if (!book) {
-            return res.status(404).json(responses.notFound('Book'));
-        }
-
-        res.json(responses.success(book, 'Book retrieved successfully'));
-    } catch (err) {
-        console.error('Get book error:', err);
-        res.status(500).json(responses.error('Failed to retrieve book', 500));
-    }
-});
-
-// Create book with validation (improved)
-app.post('/books/v2', async (req, res) => {
-    try {
-        const { judul, penulis, penerbit = '', kategori = '', genre_id = null, tahun_terbit = null, stok = 1, cover_url = '' } = req.body;
-
-        // Validate input
-        const validation = validators.validateBook({ judul, penulis, stok, tahun_terbit, cover_url });
-        if (!validation.isValid) {
-            return res.status(400).json(responses.validationError(validation.errors));
-        }
-
-        // Get genre_id if provided genre_id is null
-        let finalGenreId = genre_id;
-        if (!finalGenreId) {
-            // Try to find genre by kategori name for backward compatibility
-            if (kategori) {
-                const [genreMatch] = await db.query(
-                    'SELECT id FROM genres WHERE nama = ?',
-                    [kategori]
-                );
-                finalGenreId = genreMatch.length > 0 ? genreMatch[0].id : 18; // 18 = Uncategorized
-            } else {
-                finalGenreId = 18; // Default to Uncategorized
-            }
-        }
-
-        // Insert book
-        const [result] = await db.query(
-            'INSERT INTO books (judul, penulis, penerbit, kategori, genre_id, tahun_terbit, stok, cover_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [judul, penulis, penerbit, kategori, finalGenreId, tahun_terbit, stok, cover_url]
-        );
-
-        // Get the created book
-        const book = await dbHelpers.getBookWithGenre(db, result.insertId);
-
-        res.status(201).json(responses.success(book, 'Book created successfully', 201));
-    } catch (err) {
-        console.error('Create book error:', err);
-        res.status(500).json(responses.error('Failed to create book', 500));
-    }
-});
-
-// Update book with validation (improved)
-app.put('/books/v2/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { judul, penulis, penerbit, kategori, genre_id, tahun_terbit, stok, cover_url } = req.body;
-
-        if (!id || isNaN(id)) {
-            return res.status(400).json(responses.error('Invalid book ID', 400));
-        }
-
-        // Check if book exists
-        const book = await dbHelpers.getBookWithGenre(db, parseInt(id));
-        if (!book) {
-            return res.status(404).json(responses.notFound('Book'));
-        }
-
-        // Validate input
-        const updateData = {};
-        if (judul) {
-            const validation = validators.validateBook({ judul, penulis: book.penulis, stok: book.stok });
-            if (!validation.isValid) {
-                return res.status(400).json(responses.validationError(validation.errors));
-            }
-            updateData.judul = judul;
-        }
-        if (penulis) updateData.penulis = penulis;
-        if (penerbit !== undefined) updateData.penerbit = penerbit;
-        if (kategori !== undefined) updateData.kategori = kategori;
-        if (genre_id !== undefined) updateData.genre_id = genre_id;
-        if (tahun_terbit !== undefined) updateData.tahun_terbit = tahun_terbit;
-        if (stok !== undefined) updateData.stok = stok;
-        if (cover_url !== undefined) updateData.cover_url = cover_url;
-
-        // Build update query
-        const fields = Object.keys(updateData).map(key => `${key} = ?`).join(', ');
-        const values = [...Object.values(updateData), id];
-
-        if (fields) {
-            await db.query(`UPDATE books SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
-        }
-
-        // Get updated book
-        const updatedBook = await dbHelpers.getBookWithGenre(db, parseInt(id));
-
-        res.json(responses.success(updatedBook, 'Book updated successfully'));
-    } catch (err) {
-        console.error('Update book error:', err);
-        res.status(500).json(responses.error('Failed to update book', 500));
-    }
-});
-
-// Delete book with validation (improved)
-app.delete('/books/v2/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        if (!id || isNaN(id)) {
-            return res.status(400).json(responses.error('Invalid book ID', 400));
-        }
-
-        // Check if book exists
-        const book = await dbHelpers.getBookWithGenre(db, parseInt(id));
-        if (!book) {
-            return res.status(404).json(responses.notFound('Book'));
-        }
-
-        // Check if book is currently borrowed
-        const [borrowed] = await db.query(
-            'SELECT COUNT(*) as count FROM transactions WHERE book_id = ? AND status = "dipinjam"',
-            [id]
-        );
-
-        if (borrowed[0].count > 0) {
-            return res.status(400).json(responses.error(
-                'Buku tidak dapat dihapus karena masih dipinjam oleh pengguna',
-                400
-            ));
-        }
-
-        // Delete book
-        await db.query('DELETE FROM books WHERE id = ?', [id]);
-
-        res.json(responses.success(null, 'Book deleted successfully'));
-    } catch (err) {
-        console.error('Delete book error:', err);
-        res.status(500).json(responses.error('Failed to delete book', 500));
-    }
-});
-
-// Check if user can borrow a specific book
-app.post('/books/v2/:id/check-borrow', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { user_id } = req.body;
-
-        if (!id || isNaN(id) || !user_id) {
-            return res.status(400).json(responses.error('Invalid parameters', 400));
-        }
-
-        const { canBorrow, errors } = await dbHelpers.canUserBorrow(db, user_id, parseInt(id));
-
-        if (!canBorrow) {
-            return res.status(400).json(responses.error('Cannot borrow book', 400, errors));
-        }
-
-        res.json(responses.success({ canBorrow: true }, 'User can borrow this book'));
-    } catch (err) {
-        console.error('Check borrow error:', err);
-        res.status(500).json(responses.error('Failed to check borrow eligibility', 500));
-    }
-});
-
 // --- OPEN LIBRARY INTEGRATION ---
-// Search Buku dari Open Library API
+// Search Buku dari Open Library API (tanpa kategori dan genre)
 app.get('/books/search-openlib', async (req, res) => {
     const { q } = req.query;
     try {
@@ -699,25 +51,18 @@ app.get('/books/search-openlib', async (req, res) => {
                 try {
                     const jsonData = JSON.parse(data);
                     
-                    // Transform Open Library data
                     const books = jsonData.docs.map(doc => {
                         // Generate cover URL with multiple fallback options
                         let cover_url = null;
                         
                         if (doc.cover_i) {
-                            // Use cover_i if available (most reliable)
                             cover_url = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`;
                         } else if (doc.isbn && doc.isbn[0]) {
-                            // Fallback to ISBN
                             cover_url = `https://covers.openlibrary.org/b/isbn/${doc.isbn[0]}-M.jpg`;
                         } else if (doc.key) {
-                            // Last resort: use OLID key
                             const olid = doc.key.split('/').pop();
                             cover_url = `https://covers.openlibrary.org/b/olid/${olid}-M.jpg`;
                         }
-                        
-                        // Determine genre based on Open Library data
-                        const genre = getGenreFromOpenLib(doc);
                         
                         return {
                             title: doc.title,
@@ -725,20 +70,15 @@ app.get('/books/search-openlib', async (req, res) => {
                             publisher: doc.publisher ? doc.publisher[0] : '-',
                             year: doc.first_publish_year || '-',
                             isbn: doc.isbn ? doc.isbn[0] : '-',
-                            genre: genre,
                             key: doc.key,
                             cover_i: doc.cover_i,
                             cover_url: cover_url,
-                            openLibData: doc  // Include full Open Library data for import
+                            openLibData: doc
                         };
                     });
                     
                     res.json(books);
                     console.log(`✅ Search for "${q}" found ${books.length} results from Open Library`);
-                    // Log first book's genre info for debugging
-                    if (books.length > 0) {
-                        console.log(`📚 First book genre: "${books[0].genre}"`);
-                    }
                 } catch (parseErr) {
                     console.error('Parse error:', parseErr);
                     res.status(500).json({ message: 'Error parsing Open Library response' });
@@ -752,6 +92,29 @@ app.get('/books/search-openlib', async (req, res) => {
         console.error('Search error:', err);
         res.status(500).json({ message: 'Error searching Open Library', error: err.message });
     }
+});
+
+// --- 2. MANAJEMEN BUKU (CRUD) ---
+// Get Semua Buku
+app.get('/books', async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT * FROM books ORDER BY judul ASC');
+        res.json(rows);
+    } catch (err) { res.status(500).json(err); }
+});
+
+// Ambil daftar kategori buku
+// --- 1. LOGIN (Admin & Siswa) ---
+app.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const [rows] = await db.query('SELECT * FROM users WHERE username = ? AND password = ?', [username, password]);
+        if (rows.length > 0) {
+            res.json({ success: true, user: rows[0] });
+        } else {
+            res.status(401).json({ success: false, message: "Username/Password salah" });
+        }
+    } catch (err) { res.status(500).json(err); }
 });
 
 // Get Detail Buku
@@ -818,60 +181,124 @@ app.delete('/books/:id', async (req, res) => {
 app.put('/books/:id', async (req, res) => {
     const { judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url } = req.body;
     try {
+        // If stok is not provided or is null, preserve existing stok value
+        let stokValue = stok;
+        if (stokValue === null || stokValue === undefined) {
+            console.log(`⚠️ Stok not provided in update request. Will preserve existing value.`);
+            const [existing] = await db.query('SELECT stok FROM books WHERE id = ?', [req.params.id]);
+            if (existing.length > 0) {
+                stokValue = existing[0].stok;
+                console.log(`📚 Preserved existing stok: ${stokValue}`);
+            } else {
+                stokValue = 0; // Default to 0 if book not found (shouldn't happen)
+            }
+        }
+
         await db.query('UPDATE books SET judul=?, penulis=?, penerbit=?, kategori=?, tahun_terbit=?, stok=?, cover_url=? WHERE id=?', 
-            [judul, penulis, penerbit, kategori || 'Fiksi', tahun_terbit, stok, cover_url || null, req.params.id]);
+            [judul, penulis, penerbit, kategori || 'Fiksi', tahun_terbit, stokValue, cover_url || null, req.params.id]);
         res.json({ message: "Buku diupdate" });
     } catch (err) { res.status(500).json(err); }
 });
 
 // Update Stok Buku (Tambah/Kurangi)
 app.put('/books/:id/update-stok', async (req, res) => {
-    const { jumlah, tipe } = req.body; // tipe: 'tambah' atau 'kurangi'
+    const { jumlah, tipe } = req.body; // tipe: 'tambah', 'kurangi', atau 'set'
     try {
-        if (!jumlah || isNaN(jumlah) || jumlah < 1) {
-            return res.status(400).json({ message: "Jumlah harus berupa angka positif" });
+        console.log(`📦 Update stok request: id=${req.params.id}, jumlah=${jumlah}, tipe=${tipe}`);
+        
+        // Validate tipe first
+        if (tipe !== 'tambah' && tipe !== 'kurangi' && tipe !== 'set') {
+            console.log('❌ Invalid tipe:', tipe);
+            return res.status(400).json({ message: "Tipe harus 'tambah', 'kurangi', atau 'set'" });
         }
 
-        // Get current stock
-        const [book] = await db.query('SELECT stok FROM books WHERE id = ?', [req.params.id]);
-        if (book.length === 0) {
+        // Parse and validate jumlah - min value depends on tipe
+        const parsedJumlah = parseInt(jumlah);
+        const minValue = tipe === 'set' ? 0 : 1;
+        console.log(`🔢 Parsed jumlah: ${parsedJumlah}, tipe: ${tipe}, minValue: ${minValue}`);
+        
+        if (!jumlah || isNaN(parsedJumlah) || parsedJumlah < minValue) {
+            console.log(`❌ Validation failed for jumlah: ${jumlah}`);
+            const msg = tipe === 'set' 
+                ? "Stok awal harus berupa angka (0 atau lebih)" 
+                : "Jumlah harus berupa angka positif (minimal 1)";
+            return res.status(400).json({ message: msg });
+        }
+
+        // Get current stock - fetch full book data to debug
+        const [book] = await db.query('SELECT id, judul, stok FROM books WHERE id = ?', [req.params.id]);
+        console.log(`🔍 Database query result for id ${req.params.id}:`, JSON.stringify(book), `rows: ${book?.length || 0}`);
+        
+        if (!book || book.length === 0) {
+            console.log('❌ Book not found with id:', req.params.id);
             return res.status(404).json({ message: "Buku tidak ditemukan" });
         }
 
         const currentStok = book[0].stok;
-        let newStok = currentStok;
+        console.log(`📊 Book found: "${book[0].judul}", stok value: ${currentStok}, type: ${typeof currentStok}`);
+        
+        // Check if stok is null/undefined
+        const isStokNull = currentStok === null || currentStok === undefined;
+        console.log(`📌 isStokNull: ${isStokNull}, tipe: ${tipe}`);
+        
+        // Handle null/undefined stok - only allow if tipe is 'set' (initialization)
+        if (isStokNull && tipe !== 'set') {
+            console.log('⚠️ ERROR: Book stok is null/undefined and tipe is not "set"!');
+            return res.status(400).json({ 
+                message: "Stok buku belum diinisialisasi. Gunakan 'Atur Stok Awal' terlebih dahulu.",
+                error: "stok_is_null"
+            });
+        }
+        
+        // Parse current stok - use 0 if null/undefined (for initialization)
+        const stokAsNumber = currentStok === null || currentStok === undefined ? 0 : parseInt(currentStok);
+        if (isNaN(stokAsNumber)) {
+            console.log('❌ Current stok is not a valid number:', currentStok);
+            return res.status(400).json({ 
+                message: "Error: Stok buku tidak berupa angka yang valid",
+                error: "stok_not_number"
+            });
+        }
+        
+        let newStok = stokAsNumber;
 
-        if (tipe === 'tambah') {
-            newStok = currentStok + parseInt(jumlah);
+        
+        if (tipe === 'set') {
+            newStok = parsedJumlah;
+            console.log(`📝 Set: stok diatur dari ${stokAsNumber} menjadi ${newStok}`);
+        } else if (tipe === 'tambah') {
+            newStok = stokAsNumber + parsedJumlah;
+            console.log(`➕ Tambah: ${stokAsNumber} + ${parsedJumlah} = ${newStok}`);
         } else if (tipe === 'kurangi') {
-            if (currentStok < jumlah) {
-                return res.status(400).json({ message: `Stok tidak cukup. Stok saat ini: ${currentStok}` });
+            if (stokAsNumber < parsedJumlah) {
+                console.log(`❌ Stok tidak cukup: ${stokAsNumber} < ${parsedJumlah}`);
+                return res.status(400).json({ message: `Stok tidak cukup. Stok saat ini: ${stokAsNumber}` });
             }
-            newStok = currentStok - parseInt(jumlah);
-        } else {
-            return res.status(400).json({ message: "Tipe harus 'tambah' atau 'kurangi'" });
+            newStok = stokAsNumber - parsedJumlah;
+            console.log(`➖ Kurangi: ${stokAsNumber} - ${parsedJumlah} = ${newStok}`);
         }
 
-        await db.query('UPDATE books SET stok = ? WHERE id = ?', [newStok, req.params.id]);
+        // Update database
+        const updateResult = await db.query('UPDATE books SET stok = ? WHERE id = ?', [newStok, req.params.id]);
+        console.log(`✅ Database updated: new stok = ${newStok}`);
         
         res.json({ 
-            message: `Stok berhasil di${tipe} sebesar ${jumlah}`,
-            stok_lama: currentStok,
+            message: tipe === 'set' 
+                ? `Stok awal berhasil diatur menjadi ${parsedJumlah}`
+                : `Stok berhasil di${tipe} sebesar ${parsedJumlah}`,
+            stok_lama: stokAsNumber,
             stok_baru: newStok,
-            perubahan: tipe === 'tambah' ? `+${jumlah}` : `-${jumlah}`
+            perubahan: tipe === 'tambah' ? `+${parsedJumlah}` : `-${parsedJumlah}`
         });
     } catch (err) {
-        console.error('Update stok error:', err);
-        res.status(500).json(err);
+        console.error('❌ Update stok error:', err);
+        res.status(500).json({ message: err.message });
     }
 });
 
 // Import Buku dari Open Library ke Database
 app.post('/books/import-openlib', async (req, res) => {
     const { title, author, publisher, year, cover_url, openLibData } = req.body;
-    
-    console.log('\n📥 Import request received:', { title, author, publisher, year, cover_url });
-    
     try {
         // Validasi input
         if (!title || !author) {
@@ -881,71 +308,28 @@ app.post('/books/import-openlib', async (req, res) => {
         // Cek apakah buku sudah ada
         const [existing] = await db.query('SELECT id FROM books WHERE judul = ? AND penulis = ?', [title, author]);
         if (existing.length > 0) {
-            console.log('⚠️ Book already exists:', title);
             return res.status(400).json({ message: 'Buku sudah ada di database' });
         }
 
-        // Determine CATEGORY (physical type) and GENRE (story theme)
-        let categoryId = null;
-        let categoryName = null;
-        let genreId = null;
-        let genreName = null;
-        
-        if (openLibData) {
-            // Get category (physical book type)
-            const categoryResult = await getBestCategoryIdFromOpenLib(openLibData, db);
-            categoryId = categoryResult.id;
-            categoryName = categoryResult.nama;
-            
-            // Get genre (story theme)
-            const genreResult = await getBestGenreIdFromOpenLib(openLibData, db);
-            genreId = genreResult.id;
-            genreName = genreResult.nama;
-        }
-        
-        // Log classification result
-        console.log(`\n✅ Classification complete:`);
-        if (categoryName) {
-            console.log(`  📦 Category: "${categoryName}" (ID: ${categoryId})`);
-        } else {
-            console.log(`  📦 Category: NULL (tidak terdeteksi)`);
-        }
-        if (genreName) {
-            console.log(`  🎭 Genre: "${genreName}" (ID: ${genreId})`);
-        } else {
-            console.log(`  🎭 Genre: NULL (tidak terdeteksi)`);
-        }
-        
-        // Insert buku with optional category_id and genre_id (can be NULL)
+        // Insert buku tanpa kategori (NULL untuk Open Library books)
         const insertResult = await db.query(
-            'INSERT INTO books (judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url, category_id, genre_id) VALUES (?,?,?,?,?,?,?,?,?)',
-            [title, author, publisher || null, categoryName, year || null, 1, cover_url || null, categoryId, genreId]
+            'INSERT INTO books (judul, penulis, penerbit, tahun_terbit, stok, cover_url, kategori) VALUES (?,?,?,?,?,?,NULL)',
+            [title, author, publisher || null, year || null, 1, cover_url || null]
         );
 
-        console.log('✅ Book imported successfully!');
+        console.log('✅ Book imported successfully');
         res.json({ 
             message: 'Buku berhasil diimport dari Open Library',
             book: {
                 id: insertResult[0].insertId,
-                title: title,
-                categoryId: categoryId,
-                categoryName: categoryName || '(tidak terdeteksi)',
-                genreId: genreId,
-                genreName: genreName || '(tidak terdeteksi)'
+                title: title
             }
         });
     } catch (err) {
         console.error('❌ Import error:', err);
-        console.error('Error details:', {
-            message: err.message,
-            code: err.code,
-            errno: err.errno,
-            sql: err.sql
-        });
         res.status(500).json({ 
             message: 'Error importing book', 
-            error: err.message,
-            details: err.code
+            error: err.message
         });
     }
 });
@@ -1340,6 +724,20 @@ app.get('/student-borrowed-books/:userId', async (req, res) => {
         );
         res.json(rows);
     } catch (err) { res.status(500).json(err); }
+});
+
+// Ambil Riwayat Peminjaman untuk Siswa (Semua transaksi termasuk yang sudah dikembalikan)
+app.get('/my-borrowing-history/:userId', async (req, res) => {
+    try {
+        const [rows] = await db.query(
+            'SELECT t.id, b.id as book_id, b.judul, b.penulis, b.kategori, t.tanggal_pinjam, t.tanggal_kembali, t.status, t.denda FROM transactions t JOIN books b ON t.book_id = b.id WHERE t.user_id = ? ORDER BY t.tanggal_pinjam DESC',
+            [req.params.userId]
+        );
+        res.json(rows);
+    } catch (err) { 
+        console.error('Borrowing history error:', err);
+        res.status(500).json(err); 
+    }
 });
 
 // --- 6. PROFILE USER ---
