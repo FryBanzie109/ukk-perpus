@@ -3,6 +3,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const db = require('./db');
 const https = require('https');
+const PDFDocument = require('pdfkit');
 const { validators, responses, dbHelpers, pagination } = require('./utils');
 
 const app = express();
@@ -33,6 +34,8 @@ app.post('/login', async (req, res) => {
 // Search Buku dari Open Library API (tanpa kategori dan genre)
 app.get('/books/search-openlib', async (req, res) => {
     const { q } = req.query;
+    let responseSent = false; // Flag untuk prevent multiple responses
+    
     try {
         if (!q || q.trim() === '') {
             return res.json([]);
@@ -40,7 +43,18 @@ app.get('/books/search-openlib', async (req, res) => {
 
         const searchUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(q)}&limit=20`;
         
-        https.get(searchUrl, (response) => {
+        const request = https.get(searchUrl, { timeout: 10000 }, (response) => {
+            // Check HTTP status code
+            if (response.statusCode !== 200) {
+                if (responseSent) return;
+                responseSent = true;
+                console.error(`❌ Open Library API returned status ${response.statusCode}`);
+                return res.status(500).json({ 
+                    message: `Open Library API error (${response.statusCode})`,
+                    error: `HTTP ${response.statusCode}`
+                });
+            }
+
             let data = '';
             
             response.on('data', (chunk) => {
@@ -48,8 +62,17 @@ app.get('/books/search-openlib', async (req, res) => {
             });
             
             response.on('end', () => {
+                if (responseSent) return;
+                
                 try {
                     const jsonData = JSON.parse(data);
+                    
+                    // Check if docs array exists
+                    if (!jsonData.docs || !Array.isArray(jsonData.docs)) {
+                        console.warn('⚠️ No docs in Open Library response');
+                        responseSent = true;
+                        return res.json([]);
+                    }
                     
                     const books = jsonData.docs.map(doc => {
                         // Generate cover URL with multiple fallback options
@@ -77,19 +100,45 @@ app.get('/books/search-openlib', async (req, res) => {
                         };
                     });
                     
+                    responseSent = true;
                     res.json(books);
                     console.log(`✅ Search for "${q}" found ${books.length} results from Open Library`);
                 } catch (parseErr) {
-                    console.error('Parse error:', parseErr);
-                    res.status(500).json({ message: 'Error parsing Open Library response' });
+                    if (responseSent) return;
+                    responseSent = true;
+                    console.error('❌ Parse error:', parseErr);
+                    res.status(500).json({ message: 'Error parsing Open Library response', error: parseErr.message });
                 }
             });
-        }).on('error', (err) => {
-            console.error('Open Library search error:', err);
+
+            response.on('error', (err) => {
+                if (responseSent) return;
+                responseSent = true;
+                console.error('❌ Response stream error:', err);
+                res.status(500).json({ message: 'Error reading Open Library response', error: err.message });
+            });
+        });
+
+        // Handle request timeout
+        request.on('timeout', () => {
+            if (responseSent) return;
+            responseSent = true;
+            console.error('❌ Open Library request timeout');
+            request.destroy();
+            res.status(500).json({ message: 'Open Library search timeout', error: 'Request took too long' });
+        });
+
+        // Handle request error
+        request.on('error', (err) => {
+            if (responseSent) return;
+            responseSent = true;
+            console.error('❌ Open Library request error:', err);
             res.status(500).json({ message: 'Error searching Open Library', error: err.message });
         });
     } catch (err) {
-        console.error('Search error:', err);
+        if (responseSent) return;
+        responseSent = true;
+        console.error('❌ Search error:', err);
         res.status(500).json({ message: 'Error searching Open Library', error: err.message });
     }
 });
@@ -130,7 +179,7 @@ app.get('/books/:id', async (req, res) => {
 
 // Search & Filter Buku
 app.get('/search-books', async (req, res) => {
-    const { q, kategori } = req.query;
+    const { q, kategori, tahun_terbit, stok_status } = req.query;
     try {
         let query = 'SELECT * FROM books WHERE 1=1';
         const params = [];
@@ -143,15 +192,30 @@ app.get('/search-books', async (req, res) => {
         }
 
         // Filter berdasarkan kategori
-        if (kategori && kategori.trim() !== '') {
+        if (kategori && kategori.trim() !== '' && kategori !== 'semua') {
             query += ' AND kategori = ?';
             params.push(kategori);
+        }
+
+        // Filter berdasarkan tahun terbit
+        if (tahun_terbit && tahun_terbit.trim() !== '' && tahun_terbit !== 'semua') {
+            query += ' AND tahun_terbit = ?';
+            params.push(tahun_terbit);
+        }
+
+        // Filter berdasarkan stok status
+        if (stok_status && stok_status.trim() !== '' && stok_status !== 'semua') {
+            if (stok_status === 'tersedia') {
+                query += ' AND stok > 0';
+            } else if (stok_status === 'tidak_tersedia') {
+                query += ' AND stok <= 0';
+            }
         }
 
         query += ' ORDER BY judul ASC';
 
         const [rows] = await db.query(query, params);
-        console.log(`Search for "${q}" with kategori "${kategori}" found ${rows.length} results`);
+        console.log(`Search for "${q}" | kategori: "${kategori}" | tahun: "${tahun_terbit}" | stok: "${stok_status}" found ${rows.length} results`);
         res.json(rows);
     } catch (err) { 
         console.error('Search error:', err);
@@ -619,8 +683,8 @@ app.get('/transactions', async (req, res) => {
 // Ambil Semua Siswa
 app.get('/students', async (req, res) => {
     try {
-        // Kita ambil id, nama, username, role. Password jangan dikirim demi keamanan.
-        const [rows] = await db.query('SELECT id, nama_lengkap, username, role, kelas, jurusan, foto_profil FROM users WHERE role = "siswa"');
+        // Kita ambil id, nama, username, role, created_at. Password jangan dikirim demi keamanan.
+        const [rows] = await db.query('SELECT id, nama_lengkap, username, role, kelas, jurusan, foto_profil, created_at FROM users WHERE role = "siswa"');
         res.json(rows);
     } catch (err) { res.status(500).json(err); }
 });
@@ -629,7 +693,7 @@ app.get('/students', async (req, res) => {
 app.get('/search-students', async (req, res) => {
     const { q, kelas, jurusan } = req.query;
     try {
-        let query = 'SELECT id, nama_lengkap, username, role, kelas, jurusan, foto_profil FROM users WHERE role = "siswa"';
+        let query = 'SELECT id, nama_lengkap, username, role, kelas, jurusan, foto_profil, created_at FROM users WHERE role = "siswa"';
         const params = [];
 
         // Filter berdasarkan nama/username
@@ -1178,6 +1242,226 @@ app.post('/register', async (req, res) => {
         
         res.json({ message: "Registrasi Berhasil! Silakan Login." });
     } catch (err) { res.status(500).json(err); }
+});
+
+// --- STOCK TRENDS (untuk grafik) ---
+app.get('/books/trends/stock', async (req, res) => {
+    try {
+        // Get last 7 days
+        const last7Days = [];
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            last7Days.push(date.toISOString().split('T')[0]);
+        }
+
+        // Count books added (masuk) by created_at
+        const booksIn = {};
+        const booksOut = {};
+        const totalStockByDay = {};
+
+        last7Days.forEach(day => {
+            booksIn[day] = 0;
+            booksOut[day] = 0;
+            totalStockByDay[day] = 0;
+        });
+
+        // Get books created in last 7 days (Buku Masuk)
+        for (const day of last7Days) {
+            const [count] = await db.query(
+                'SELECT COUNT(*) as total FROM books WHERE DATE(created_at) = ?',
+                [day]
+            );
+            booksIn[day] = count[0].total || 0;
+        }
+
+        // Get books returned (dikembalikan) in last 7 days (Buku Keluar dari stok)
+        for (const day of last7Days) {
+            const [count] = await db.query(
+                'SELECT COUNT(*) as total FROM transactions WHERE DATE(tanggal_kembali) = ? AND status = "kembali"',
+                [day]
+            );
+            booksOut[day] = count[0].total || 0;
+        }
+
+        // Get total stock each day (simulated as last day stock for all days)
+        const [totalStock] = await db.query('SELECT COALESCE(SUM(stok), 0) as total FROM books');
+        const totalStockValue = totalStock[0].total || 0;
+
+        last7Days.forEach(day => {
+            totalStockByDay[day] = totalStockValue;
+        });
+
+        res.json({
+            booksIn,
+            booksOut,
+            totalStockByDay,
+            last7Days
+        });
+    } catch (err) {
+        console.error('Error fetching stock trends:', err);
+        res.status(500).json({ message: 'Error fetching stock trends', error: err.message });
+    }
+});
+
+// --- PDF GENERATION ---
+// Generate PDF Laporan Transaksi
+app.get('/generate-pdf-transaction/:userId', async (req, res) => {
+    try {
+        const userId = req.params.userId;
+
+        // Get user profile
+        const [userRows] = await db.query(
+            'SELECT id, nama_lengkap, username, kelas, jurusan, role FROM users WHERE id = ?',
+            [userId]
+        );
+
+        if (userRows.length === 0) {
+            return res.status(404).json({ message: 'User tidak ditemukan' });
+        }
+
+        const user = userRows[0];
+
+        // Get all transactions for this user
+        const [transactions] = await db.query(
+            `SELECT t.id, b.id as book_id, b.judul, b.penulis, b.kategori, 
+                    t.tanggal_pinjam, t.tanggal_kembali, t.status, t.denda 
+             FROM transactions t 
+             JOIN books b ON t.book_id = b.id 
+             WHERE t.user_id = ? 
+             ORDER BY t.tanggal_pinjam DESC`,
+            [userId]
+        );
+
+        // Create PDF stream
+        const doc = new PDFDocument({
+            bufferPages: true,
+            margin: 40
+        });
+
+        // Set response headers
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="Laporan_Transaksi_${user.nama_lengkap.replace(/\s+/g, '_')}.pdf"`);
+
+        // Pipe to response
+        doc.pipe(res);
+
+        // Add content
+        // Header
+        doc.fontSize(20).font('Helvetica-Bold').text('LAPORAN RIWAYAT TRANSAKSI PEMINJAMAN BUKU', { align: 'center' });
+        doc.fontSize(12).font('Helvetica').text('Sistem Informasi Perpustakaan', { align: 'center' });
+        doc.moveDown(0.5);
+        doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke();
+        doc.moveDown(1);
+
+        // User Information
+        doc.fontSize(11).font('Helvetica-Bold').text('Informasi Peminjam:', { underline: true });
+        doc.fontSize(10).font('Helvetica');
+        doc.text(`Nama: ${user.nama_lengkap}`);
+        doc.text(`Username: ${user.username}`);
+        doc.text(`Kelas: ${user.kelas || '-'}`);
+        doc.text(`Jurusan: ${user.jurusan || '-'}`);
+        doc.text(`Tanggal Cetak: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`);
+        doc.moveDown(1);
+
+        // Transaction Summary
+        const totalTransactions = transactions.length;
+        const completedTransactions = transactions.filter(t => t.status === 'kembali').length;
+        const ongoingTransactions = transactions.filter(t => t.status === 'dipinjam').length;
+        const totalFines = transactions.reduce((sum, t) => sum + (t.denda || 0), 0);
+
+        doc.fontSize(11).font('Helvetica-Bold').text('Ringkasan:', { underline: true });
+        doc.fontSize(10).font('Helvetica');
+        doc.text(`Total Transaksi: ${totalTransactions}`);
+        doc.text(`Sudah Dikembalikan: ${completedTransactions}`);
+        doc.text(`Sedang Dipinjam: ${ongoingTransactions}`);
+        doc.text(`Total Denda: Rp ${totalFines.toLocaleString('id-ID')}`);
+        doc.moveDown(1.5);
+
+        // Transactions Table
+        if (transactions.length > 0) {
+            doc.fontSize(11).font('Helvetica-Bold').text('Daftar Transaksi:', { underline: true });
+            doc.moveDown(0.5);
+
+            const tableTop = doc.y;
+            const col1X = 50;
+            const col2X = 150;
+            const col3X = 270;
+            const col4X = 380;
+            const col5X = 480;
+            const rowHeight = 25;
+
+            // Table Header
+            doc.fontSize(9).font('Helvetica-Bold');
+            doc.text('No', col1X, tableTop);
+            doc.text('Judul Buku', col2X, tableTop);
+            doc.text('Tgl Pinjam', col3X, tableTop);
+            doc.text('Tgl Kembali', col4X, tableTop);
+            doc.text('Status', col5X, tableTop);
+
+            doc.moveTo(50, tableTop + 15).lineTo(555, tableTop + 15).stroke();
+
+            // Table Rows
+            doc.font('Helvetica');
+            transactions.forEach((trans, index) => {
+                const yPosition = tableTop + 20 + (index * rowHeight);
+
+                // Check if we need a new page
+                if (yPosition > 700) {
+                    doc.addPage({ margin: 40 });
+                    doc.font('Helvetica-Bold').fontSize(9);
+                    doc.text('No', col1X, 50);
+                    doc.text('Judul Buku', col2X, 50);
+                    doc.text('Tgl Pinjam', col3X, 50);
+                    doc.text('Tgl Kembali', col4X, 50);
+                    doc.text('Status', col5X, 50);
+                    doc.moveTo(50, 65).lineTo(555, 65).stroke();
+                    doc.font('Helvetica').fontSize(9);
+                }
+
+                const displayY = yPosition > 700 ? (yPosition % 700) + 70 : yPosition;
+
+                doc.fontSize(9);
+                doc.text(index + 1, col1X, displayY);
+                doc.text(trans.judul.substring(0, 20), col2X, displayY);
+                doc.text(new Date(trans.tanggal_pinjam).toLocaleDateString('id-ID'), col3X, displayY);
+                doc.text(trans.tanggal_kembali ? new Date(trans.tanggal_kembali).toLocaleDateString('id-ID') : '-', col4X, displayY);
+
+                const statusBadge = trans.status === 'kembali' ? '✓ Dikembalikan' : trans.status === 'diminta_kembali' ? '⟰ Diminta Kembali' : '◇ Dipinjam';
+                doc.text(statusBadge, col5X, displayY);
+
+                if (trans.denda && trans.denda > 0) {
+                    doc.fontSize(8).fillColor('red');
+                    doc.text(`(Denda: Rp ${trans.denda.toLocaleString('id-ID')})`, col5X, displayY + 12);
+                    doc.fillColor('black');
+                }
+            });
+
+            // Footer line
+            doc.moveTo(50, tableTop + 20 + (transactions.length * rowHeight)).lineTo(555, tableTop + 20 + (transactions.length * rowHeight)).stroke();
+        } else {
+            doc.fontSize(10).font('Helvetica').text('Tidak ada riwayat transaksi.', { align: 'center' });
+        }
+
+        // Footer
+        doc.moveDown(2);
+        doc.fontSize(9).font('Helvetica');
+        doc.text('_____________________________', { align: 'center' });
+        doc.text('Kepala Perpustakaan', { align: 'center' });
+
+        doc.moveDown(0.5);
+        doc.fontSize(8).fillColor('gray');
+        doc.text('Dokumen ini dibuat oleh sistem dan bersifat sah.', { align: 'center' });
+        doc.text(`Generated: ${new Date().toLocaleString('id-ID')}`, { align: 'center' });
+
+        // End the document
+        doc.end();
+
+        console.log(`✅ PDF laporan transaksi untuk user ${userId} berhasil dibuat`);
+    } catch (err) {
+        console.error('PDF generation error:', err);
+        res.status(500).json({ message: 'Error generating PDF', error: err.message });
+    }
 });
 
 app.listen(5000, () => console.log('Server running on port 5000'));

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { BooksChart, StudentsChart, TransactionsChart } from '../components/Charts';
 
 // Hardcoded constants untuk kelas, jurusan, dan kategori
 const DAFTAR_KELAS = ['X', 'XI', 'XII'];
@@ -37,7 +38,10 @@ export default function Dashboard() {
     const [showBookProfile, setShowBookProfile] = useState(false);
     
     // Search & Filter Buku States
-
+    const [filterKategori, setFilterKategori] = useState('semua');
+    const [filterTahun, setFilterTahun] = useState('semua');
+    const [filterStok, setFilterStok] = useState('semua');
+    const [tahunTersedia, setTahunTersedia] = useState([]);
     
     // Search & Filter Siswa States
     const [searchSiswa, setSearchSiswa] = useState('');
@@ -212,6 +216,14 @@ export default function Dashboard() {
         setSiswaFiltered(students);
     }, [students]);
 
+    // Extract available years from books
+    useEffect(() => {
+        if (books.length > 0) {
+            const tahunUnique = [...new Set(books.map(b => b.tahun_terbit).filter(t => t))].sort().reverse();
+            setTahunTersedia(tahunUnique);
+        }
+    }, [books]);
+
 
 
     // --- LOGIC BUKU ---
@@ -252,11 +264,14 @@ export default function Dashboard() {
         }
     };
 
-    const searchBuku = async (query) => {
+    const searchBuku = async (query = searchQuery, kategori = filterKategori, tahun = filterTahun, stok = filterStok) => {
         setSearchQuery(query);
         try {
             const params = new URLSearchParams();
             if (query.trim()) params.append('q', query.trim());
+            if (kategori && kategori !== 'semua') params.append('kategori', kategori);
+            if (tahun && tahun !== 'semua') params.append('tahun_terbit', tahun);
+            if (stok && stok !== 'semua') params.append('stok_status', stok);
 
             const url = params.toString() 
                 ? `http://localhost:5000/search-books?${params.toString()}`
@@ -326,7 +341,8 @@ export default function Dashboard() {
             penulis: freshBook.penulis,
             penerbit: freshBook.penerbit || '',
             kategori: freshBook.kategori || '',
-            tahun_terbit: freshBook.tahun_terbit || ''
+            tahun_terbit: freshBook.tahun_terbit || '',
+            cover_url: freshBook.cover_url || ''
         });
         setSelectedBookForStock(freshBook);
         console.log('RESET stokInput to empty');
@@ -348,14 +364,15 @@ export default function Dashboard() {
             console.log('📦 Stok Input State:', stokInput);
             console.log('📚 Current stok from selectedBookForStock:', selectedBookForStock?.stok);
             
-            // Update buku data - PENTING: include stok to preserve it!
+            // Update buku data - PENTING: include stok & cover_url to preserve them!
             await axios.put(`http://localhost:5000/books/${editBookData.id}`, {
                 judul: editBookData.judul.trim(),
                 penulis: editBookData.penulis.trim(),
                 penerbit: editBookData.penerbit.trim() || null,
                 kategori: editBookData.kategori || null,
                 tahun_terbit: editBookData.tahun_terbit || null,
-                stok: selectedBookForStock?.stok  // CRITICAL: Don't lose stok value!
+                stok: selectedBookForStock?.stok,  // CRITICAL: Don't lose stok value!
+                cover_url: editBookData.cover_url || null  // CRITICAL: Don't lose cover photo!
             });
 
             console.log('✅ Buku data updated');
@@ -788,6 +805,14 @@ export default function Dashboard() {
                                 🖨️ Cetak Denda
                             </button>
                         </li>
+                        <li className="nav-item">
+                            <button 
+                                className={`nav-link ${activeTab === 'grafik' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('grafik')}
+                            >
+                                📊 Grafik & Laporan
+                            </button>
+                        </li>
                     </ul>
 
                     <div className="card border-0 mt-3">
@@ -798,19 +823,83 @@ export default function Dashboard() {
                                 
                                 {/* Search Bar dan Filter */}
                                 <div className="row g-3 mb-4 pb-3" style={{borderBottom: '2px solid #dee2e6'}}>
-                                    <div className="col-md-7">
+                                    <div className="col-md-4">
                                         <label className="form-label fw-bold">🔍 Cari Buku</label>
                                         <input 
                                             id="searchBooks"
                                             name="searchBooks"
                                             type="text" 
                                             className="form-control form-control-lg" 
-                                            placeholder="Cari berdasarkan judul, penulis, atau penerbit..." 
+                                            placeholder="Judul, penulis, penerbit..." 
                                             value={searchQuery}
                                             onChange={(e) => searchBuku(e.target.value)}
                                         />
                                     </div>
 
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📂 Kategori</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterKategori}
+                                            onChange={(e) => {
+                                                setFilterKategori(e.target.value);
+                                                searchBuku(searchQuery, e.target.value, filterTahun, filterStok);
+                                            }}
+                                        >
+                                            <option value="semua">Semua</option>
+                                            {DAFTAR_KATEGORI.map(kat => (
+                                                <option key={kat} value={kat}>{kat}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📅 Tahun</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterTahun}
+                                            onChange={(e) => {
+                                                setFilterTahun(e.target.value);
+                                                searchBuku(searchQuery, filterKategori, e.target.value, filterStok);
+                                            }}
+                                        >
+                                            <option value="semua">Semua Tahun</option>
+                                            {tahunTersedia.map(tahun => (
+                                                <option key={tahun} value={tahun}>{tahun}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📦 Stok</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterStok}
+                                            onChange={(e) => {
+                                                setFilterStok(e.target.value);
+                                                searchBuku(searchQuery, filterKategori, filterTahun, e.target.value);
+                                            }}
+                                        >
+                                            <option value="semua">Semua Status</option>
+                                            <option value="tersedia">✅ Tersedia</option>
+                                            <option value="tidak_tersedia">❌ Tidak Tersedia</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2 d-flex align-items-end">
+                                        <button 
+                                            className="btn btn-outline-secondary w-100" 
+                                            onClick={() => {
+                                                setSearchQuery('');
+                                                setFilterKategori('semua');
+                                                setFilterTahun('semua');
+                                                setFilterStok('semua');
+                                                searchBuku('', 'semua', 'semua', 'semua');
+                                            }}
+                                        >
+                                            🔄 Reset
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {books.length === 0 ? (
@@ -1074,6 +1163,89 @@ export default function Dashboard() {
                                 </form>
 
                                 <h5 className="card-title mb-4">📋 Daftar Buku di Sistema</h5>
+
+                                {/* Search Bar dan Filter */}
+                                <div className="row g-3 mb-4 pb-3" style={{borderBottom: '2px solid #dee2e6'}}>
+                                    <div className="col-md-4">
+                                        <label className="form-label fw-bold">🔍 Cari Buku</label>
+                                        <input 
+                                            id="searchBooksSistema"
+                                            name="searchBooksSistema"
+                                            type="text" 
+                                            className="form-control form-control-lg" 
+                                            placeholder="Judul, penulis, penerbit..." 
+                                            value={searchQuery}
+                                            onChange={(e) => searchBuku(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📂 Kategori</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterKategori}
+                                            onChange={(e) => {
+                                                setFilterKategori(e.target.value);
+                                                searchBuku(searchQuery, e.target.value, filterTahun, filterStok);
+                                            }}
+                                        >
+                                            <option value="semua">Semua</option>
+                                            {DAFTAR_KATEGORI.map(kat => (
+                                                <option key={kat} value={kat}>{kat}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📅 Tahun</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterTahun}
+                                            onChange={(e) => {
+                                                setFilterTahun(e.target.value);
+                                                searchBuku(searchQuery, filterKategori, e.target.value, filterStok);
+                                            }}
+                                        >
+                                            <option value="semua">Semua Tahun</option>
+                                            {tahunTersedia.map(tahun => (
+                                                <option key={tahun} value={tahun}>{tahun}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📦 Stok</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterStok}
+                                            onChange={(e) => {
+                                                setFilterStok(e.target.value);
+                                                searchBuku(searchQuery, filterKategori, filterTahun, e.target.value);
+                                            }}
+                                        >
+                                            <option value="semua">Semua Status</option>
+                                            <option value="tersedia">✅ Tersedia</option>
+                                            <option value="tidak_tersedia">❌ Tidak Tersedia</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2 d-flex align-items-end">
+                                        <button 
+                                            className="btn btn-outline-secondary w-100" 
+                                            onClick={() => {
+                                                setSearchQuery('');
+                                                setFilterKategori('semua');
+                                                setFilterTahun('semua');
+                                                setFilterStok('semua');
+                                                searchBuku('', 'semua', 'semua', 'semua');
+                                            }}
+                                        >
+                                            🔄 Reset
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                {/* Daftar Buku dalam Tabel */}
                                 {books.length === 0 ? (
                                     <div className="alert alert-info">
                                         Tidak ada buku yang tersedia.
@@ -1314,14 +1486,31 @@ export default function Dashboard() {
                                                             </span>
                                                         </td>
                                                         <td>
-                                                            {t.status === 'dipinjam' && (
+                                                            <div className="btn-group" role="group">
+                                                                {t.status === 'dipinjam' && (
+                                                                    <button 
+                                                                        onClick={() => kembalikanBuku(t.id, t.book_id)} 
+                                                                        className="btn btn-sm btn-primary"
+                                                                        title="Terima pengembalian buku"
+                                                                    >
+                                                                        Terima Kembali
+                                                                    </button>
+                                                                )}
                                                                 <button 
-                                                                    onClick={() => kembalikanBuku(t.id, t.book_id)} 
-                                                                    className="btn btn-sm btn-primary"
+                                                                    onClick={() => {
+                                                                        const link = document.createElement('a');
+                                                                        link.href = `http://localhost:5000/generate-pdf-transaction/${t.user_id}`;
+                                                                        link.download = `Laporan_${t.nama_lengkap.replace(/\s+/g, '_')}.pdf`;
+                                                                        document.body.appendChild(link);
+                                                                        link.click();
+                                                                        document.body.removeChild(link);
+                                                                    }}
+                                                                    className="btn btn-sm btn-outline-primary"
+                                                                    title="Download laporan PDF siswa"
                                                                 >
-                                                                    Terima Kembali
+                                                                    📥 PDF
                                                                 </button>
-                                                            )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))
@@ -1557,6 +1746,16 @@ export default function Dashboard() {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Grafik & Laporan Tab */}
+                        {activeTab === 'grafik' && (
+                            <div className="card-body">
+                                <h5 className="card-title mb-4">📊 Grafik & Laporan</h5>
+                                <BooksChart isDark={isDark} />
+                                <StudentsChart isDark={isDark} />
+                                <TransactionsChart isDark={isDark} />
                             </div>
                         )}
 
@@ -1923,19 +2122,83 @@ export default function Dashboard() {
                                 
                                 {/* Search Bar dan Filter */}
                                 <div className="row g-3 mb-4 pb-3" style={{borderBottom: '2px solid #dee2e6'}}>
-                                    <div className="col-md-7">
+                                    <div className="col-md-4">
                                         <label className="form-label fw-bold">🔍 Cari Buku</label>
                                         <input 
                                             id="searchBooksStudent"
                                             name="searchBooksStudent"
                                             type="text" 
                                             className="form-control form-control-lg" 
-                                            placeholder="Cari berdasarkan judul, penulis, atau penerbit..." 
+                                            placeholder="Judul, penulis, penerbit..." 
                                             value={searchQuery}
                                             onChange={(e) => searchBuku(e.target.value)}
                                         />
                                     </div>
 
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📂 Kategori</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterKategori}
+                                            onChange={(e) => {
+                                                setFilterKategori(e.target.value);
+                                                searchBuku(searchQuery, e.target.value, filterTahun, filterStok);
+                                            }}
+                                        >
+                                            <option value="semua">Semua</option>
+                                            {DAFTAR_KATEGORI.map(kat => (
+                                                <option key={kat} value={kat}>{kat}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📅 Tahun</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterTahun}
+                                            onChange={(e) => {
+                                                setFilterTahun(e.target.value);
+                                                searchBuku(searchQuery, filterKategori, e.target.value, filterStok);
+                                            }}
+                                        >
+                                            <option value="semua">Semua Tahun</option>
+                                            {tahunTersedia.map(tahun => (
+                                                <option key={tahun} value={tahun}>{tahun}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📦 Stok</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterStok}
+                                            onChange={(e) => {
+                                                setFilterStok(e.target.value);
+                                                searchBuku(searchQuery, filterKategori, filterTahun, e.target.value);
+                                            }}
+                                        >
+                                            <option value="semua">Semua Status</option>
+                                            <option value="tersedia">✅ Tersedia</option>
+                                            <option value="tidak_tersedia">❌ Tidak Tersedia</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2 d-flex align-items-end">
+                                        <button 
+                                            className="btn btn-outline-secondary w-100" 
+                                            onClick={() => {
+                                                setSearchQuery('');
+                                                setFilterKategori('semua');
+                                                setFilterTahun('semua');
+                                                setFilterStok('semua');
+                                                searchBuku('', 'semua', 'semua', 'semua');
+                                            }}
+                                        >
+                                            🔄 Reset
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {books.length === 0 ? (
@@ -2070,7 +2333,32 @@ export default function Dashboard() {
                         {/* Riwayat Peminjaman Tab */}
                         {activeTabSiswa === 'riwayat' && (
                             <div className="card-body">
-                                <h5 className="card-title mb-4">📜 Riwayat Peminjaman</h5>
+                                <div className="d-flex justify-content-between align-items-center mb-4">
+                                    <h5 className="card-title mb-0">📜 Riwayat Peminjaman</h5>
+                                    <div>
+                                        <button 
+                                            className="btn btn-outline-primary me-2"
+                                            onClick={() => {
+                                                const link = document.createElement('a');
+                                                link.href = `http://localhost:5000/generate-pdf-transaction/${user.id}`;
+                                                link.download = `Laporan_Transaksi_${user.nama_lengkap.replace(/\s+/g, '_')}.pdf`;
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                            }}
+                                        >
+                                            📥 Download PDF
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-secondary"
+                                            onClick={() => {
+                                                window.open(`http://localhost:5000/generate-pdf-transaction/${user.id}`, '_blank');
+                                            }}
+                                        >
+                                            🖨️ Cetak
+                                        </button>
+                                    </div>
+                                </div>
                                 
                                 {myBorrowingHistory.length === 0 ? (
                                     <div className="alert alert-info">

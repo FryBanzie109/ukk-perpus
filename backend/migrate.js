@@ -86,6 +86,20 @@ async function migrate() {
             console.log('✅ Kolom waktu_konfirmasi_kembali sudah ada, skipping...');
         }
 
+        // Check if created_at column exists in users table, if not add it
+        const [usersCreatedAtColumns] = await db.query(`
+            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = 'users' AND COLUMN_NAME = 'created_at'
+        `);
+        
+        if (usersCreatedAtColumns.length === 0) {
+            console.log('Adding created_at column to users table...');
+            await db.query(`ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER foto_profil`);
+            console.log('✅ Kolom created_at berhasil ditambahkan ke users table!');
+        } else {
+            console.log('✅ Kolom created_at sudah ada di users table, skipping...');
+        }
+
     } catch (err) {
         console.error('❌ Migration error:', err);
     }
