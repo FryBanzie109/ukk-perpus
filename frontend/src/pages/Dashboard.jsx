@@ -725,6 +725,39 @@ export default function Dashboard() {
         }
     };
 
+    // Download Kartu Anggota Perpustakaan untuk Siswa
+    const downloadMembershipCard = async (studentId, studentName) => {
+        try {
+            const response = await axios.get(`http://localhost:5000/membership-card/${studentId}`, {
+                responseType: 'blob'
+            });
+            
+            // Create blob link to download
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            
+            // Extract filename dari Content-Disposition header
+            const contentDisposition = response.headers['content-disposition'];
+            let filename = `Kartu_Anggota_${studentName}.pdf`;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                if (filenameMatch) filename = filenameMatch[1];
+            }
+            
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            
+            alert('✅ Kartu anggota berhasil diunduh!');
+        } catch (err) {
+            console.error('Membership card download error:', err);
+            alert('❌ Gagal mengunduh kartu anggota: ' + (err.message || 'Terjadi kesalahan'));
+        }
+    };
+
     const logout = () => { 
         localStorage.clear(); 
         navigate('/login'); 
@@ -1432,6 +1465,13 @@ export default function Dashboard() {
                                                                 className="btn btn-sm btn-info me-2"
                                                             >
                                                                 👁️ Lihat Profil
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => downloadMembershipCard(s.id, s.nama_lengkap)} 
+                                                                className="btn btn-sm btn-success me-2"
+                                                                title="Unduh Kartu Anggota"
+                                                            >
+                                                                🎫 Kartu
                                                             </button>
                                                             <button 
                                                                 onClick={() => hapusSiswa(s.id)} 

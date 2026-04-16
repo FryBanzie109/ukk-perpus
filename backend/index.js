@@ -1228,6 +1228,120 @@ app.get('/late-fees/download/pdf/:studentId', async (req, res) => {
     }
 });
 
+// --- 9. MEMBERSHIP CARD PDF GENERATOR ---
+// Download Kartu Anggota Perpustakaan untuk Siswa
+app.get('/membership-card/:studentId', async (req, res) => {
+    try {
+        // Get student data
+        const [student] = await db.query(
+            'SELECT id, nomor_identitas, nama_lengkap, username, kelas, jurusan, foto_profil, created_at FROM users WHERE id = ? AND role = "siswa"',
+            [req.params.studentId]
+        );
+        
+        if (student.length === 0) {
+            return res.status(404).json({ message: "Siswa tidak ditemukan" });
+        }
+
+        const studentData = student[0];
+        const doc = new PDFDocument({ margin: 0, size: [340, 215] }); // Ukuran kartu: 85.6mm x 54mm (standar ID card)
+        
+        // Generate filename
+        const filename = `Kartu_Anggota_${studentData.nama_lengkap.replace(/\s+/g, '_')}.pdf`;
+        
+        // Set response headers untuk download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        
+        // Pipe PDF ke response
+        doc.pipe(res);
+        
+        // ===== BACKGROUND COLOR =====
+        doc.rect(0, 0, 340, 215).fill('#1a237e');
+        
+        // ===== HEADER KARTU =====
+        doc.fontSize(16).font('Helvetica-Bold').fillColor('#FFFFFF')
+            .text('KARTU ANGGOTA', 20, 15, { width: 300, align: 'center' });
+        
+        doc.fontSize(9).font('Helvetica').fillColor('#FFD700')
+            .text('PERPUSTAKAAN SEKOLAH DIGITAL', 20, 33, { width: 300, align: 'center' });
+        
+        // ===== GARIS PEMISAH =====
+        doc.moveTo(20, 48).lineTo(320, 48).stroke('#FFFFFF');
+        
+        // ===== FOTO SISWA (Jika ada) =====
+        let photoX = 25;
+        if (studentData.foto_profil) {
+            try {
+                // Check if it's base64 or URL
+                if (studentData.foto_profil.startsWith('data:image')) {
+                    const base64Data = studentData.foto_profil.split(',')[1];
+                    const buffer = Buffer.from(base64Data, 'base64');
+                    doc.image(buffer, photoX, 58, { width: 65, height: 85 });
+                } else {
+                    // Try to use as URL (if applicable)
+                    // For now, skip if it's not valid base64
+                }
+            } catch (err) {
+                console.log('⚠️ Could not load student photo:', err.message);
+                // Draw placeholder if photo fails
+                doc.rect(photoX, 58, 65, 85).stroke('#FFFFFF');
+                doc.fontSize(8).fillColor('#FFFFFF').text('FOTO', photoX + 5, 95, { width: 55, align: 'center' });
+            }
+        } else {
+            // Draw placeholder for no photo
+            doc.rect(photoX, 58, 65, 85).stroke('#FFFFFF');
+            doc.fontSize(8).fillColor('#FFFFFF').text('FOTO', photoX + 5, 95, { width: 55, align: 'center' });
+        }
+        
+        // ===== DATA SISWA (Right side) =====
+        const dataX = 100;
+        const dataWidth = 230;
+        
+        // Nomor Identitas
+        doc.fontSize(8).font('Helvetica').fillColor('#FFD700').text('No. Identitas:', dataX, 58);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#FFFFFF')
+            .text(studentData.nomor_identitas || `PKS-${String(studentData.id).padStart(5, '0')}`, dataX, 67, { width: dataWidth });
+        
+        // Nama Lengkap
+        doc.fontSize(8).font('Helvetica').fillColor('#FFD700').text('Nama:', dataX, 88);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#FFFFFF')
+            .text(studentData.nama_lengkap, dataX, 97, { width: dataWidth });
+        
+        // Kelas
+        doc.fontSize(8).font('Helvetica').fillColor('#FFD700').text('Kelas:', dataX, 118);
+        doc.fontSize(9).font('Helvetica').fillColor('#FFFFFF')
+            .text(`${studentData.kelas || '-'} - ${studentData.jurusan || '-'}`, dataX, 127, { width: dataWidth });
+        
+        // Nomor Induk
+        doc.fontSize(8).font('Helvetica').fillColor('#FFD700').text('Username:', dataX, 142);
+        doc.fontSize(9).font('Helvetica').fillColor('#FFFFFF')
+            .text(studentData.username, dataX, 151, { width: dataWidth });
+        
+        // Tanggal Bergabung
+        const joinDate = new Date(studentData.created_at).toLocaleDateString('id-ID', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+        doc.fontSize(8).font('Helvetica').fillColor('#FFD700').text('Bergabung:', dataX, 166);
+        doc.fontSize(9).font('Helvetica').fillColor('#FFFFFF')
+            .text(joinDate, dataX, 175, { width: dataWidth });
+        
+        // ===== FOOTER KARTU =====
+        doc.moveTo(20, 192).lineTo(320, 192).stroke('#FFD700');
+        
+        doc.fontSize(7).font('Helvetica').fillColor('#FFD700')
+            .text('Kartu ini adalah bukti keanggotaan sah. Silakan tunjukkan saat meminjam buku.', 20, 197, { width: 300, align: 'center' });
+        
+        // Finalize PDF
+        doc.end();
+        
+    } catch (err) {
+        console.error('Membership card PDF generation error:', err);
+        res.status(500).json({ message: 'Error generating membership card PDF', error: err.message });
+    }
+});
+
 // --- 5. REGISTER SISWA (Public) ---
 app.post('/register', async (req, res) => {
     const { nama_lengkap, username, password } = req.body;
@@ -1237,8 +1351,12 @@ app.post('/register', async (req, res) => {
         if (cek.length > 0) return res.status(400).json({ message: "Username sudah dipakai!" });
 
         // Kalau aman, masukkan ke database dengan role 'siswa'
-        await db.query('INSERT INTO users (nama_lengkap, username, password, role) VALUES (?, ?, ?, "siswa")', 
+        const [result] = await db.query('INSERT INTO users (nama_lengkap, username, password, role) VALUES (?, ?, ?, "siswa")', 
             [nama_lengkap, username, password]);
+        
+        // Generate nomor_identitas untuk user baru
+        const nomorIdentitas = `PKS-${String(result.insertId).padStart(5, '0')}`;
+        await db.query('UPDATE users SET nomor_identitas = ? WHERE id = ?', [nomorIdentitas, result.insertId]);
         
         res.json({ message: "Registrasi Berhasil! Silakan Login." });
     } catch (err) { res.status(500).json(err); }

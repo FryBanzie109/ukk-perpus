@@ -125,6 +125,29 @@ export default function Profile() {
         }
     };
 
+    const downloadMembershipCard = async () => {
+        try {
+            const response = await axios.get(`http://localhost:5000/membership-card/${user.id}`, {
+                responseType: 'blob'
+            });
+            
+            // Create blob link to download
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `Kartu_Anggota_${user.nama_lengkap.replace(/\s+/g, '_')}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.parentURL.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            
+            alert('✅ Kartu anggota berhasil diunduh!');
+        } catch (err) {
+            console.error('Error downloading membership card:', err);
+            alert('❌ Gagal mengunduh kartu anggota: ' + err.message);
+        }
+    };
+
     if (loading) {
         return <div className="container py-5"><p>Loading...</p></div>;
     }
@@ -214,12 +237,22 @@ export default function Profile() {
                                             </>
                                         )}
 
-                                        <button 
-                                            className="btn btn-primary"
-                                            onClick={() => setIsEditing(true)}
-                                        >
-                                            ✏️ Edit Profil
-                                        </button>
+                                        <div className="d-flex gap-2">
+                                            <button 
+                                                className="btn btn-primary"
+                                                onClick={() => setIsEditing(true)}
+                                            >
+                                                ✏️ Edit Profil
+                                            </button>
+                                            {user.role === 'siswa' && (
+                                                <button 
+                                                    className="btn btn-success"
+                                                    onClick={downloadMembershipCard}
+                                                >
+                                                    🎫 Unduh Kartu Anggota
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             ) : (
