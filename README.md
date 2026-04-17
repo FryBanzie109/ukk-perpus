@@ -420,14 +420,6 @@ npm run dev -- --port 3000
 
 ---
 
-## 🌐 Deployment
-
-Untuk deploy ke production, lihat dokumentasi:
-- **Backend**: Heroku, Railway, Render, atau VPS
-- **Frontend**: Vercel, Netlify, atau GitHub Pages
-
----
-
 ## 👨‍💻 Author
 **FryBanzie109** - UKK School Project
 
