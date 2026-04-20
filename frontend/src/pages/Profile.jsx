@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useUser } from '../hooks/useUser';
 
 export default function Profile() {
     // Hardcoded lists untuk kelas dan jurusan
     const DAFTAR_KELAS = ['X', 'XI', 'XII'];
     const DAFTAR_JURUSAN = ['PPLG', 'AKL', 'TJKT', 'MPLB', 'DKV'];
 
-    const [user, setUser] = useState(null);
+    const user = useUser();
+    const navigate = useNavigate();
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState({
         nama_lengkap: '',
@@ -17,16 +19,14 @@ export default function Profile() {
         foto_profil: ''
     });
     const [loading, setLoading] = useState(true);
-    const navigate = useNavigate();
 
     useEffect(() => {
-        const userStr = localStorage.getItem('user');
-        if (!userStr) {
+        if (!user) {
             navigate('/login');
             return;
         }
 
-        const userData = JSON.parse(userStr);
+        const userData = user;
         
         // Fetch profile data
         const fetchProfile = async () => {

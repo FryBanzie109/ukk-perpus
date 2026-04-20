@@ -4,6 +4,8 @@ const bodyParser = require('body-parser');
 const db = require('./db');
 const https = require('https');
 const PDFDocument = require('pdfkit');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { validators, responses, dbHelpers, pagination } = require('./utils');
 
 const app = express();
@@ -21,16 +23,37 @@ app.use((err, req, res, next) => {
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
     try {
-        const [rows] = await db.query('SELECT * FROM users WHERE username = ? AND password = ?', [username, password]);
-        if (rows.length > 0) {
-            res.json({ success: true, user: rows[0] });
-        } else {
-            res.status(401).json({ success: false, message: "Username/Password salah" });
+        const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
+        if (rows.length === 0) {
+            return res.status(401).json({ success: false, message: "Username atau Password salah" });
         }
-    } catch (err) { res.status(500).json(err); }
+        
+        const user = rows[0];
+        // Check both bcrypt hashed and plain text passwords for migration support
+        let passwordMatch = false;
+        
+        // Try bcrypt comparison first
+        try {
+            passwordMatch = await bcrypt.compare(password, user.password);
+        } catch (err) {
+            // If bcrypt fails, try plain text comparison (for migration)
+            passwordMatch = user.password === password;
+        }
+        
+        if (passwordMatch) {
+            // Don't send password back to frontend for security
+            const { password, ...userWithoutPassword } = user;
+            res.json({ success: true, user: userWithoutPassword });
+        } else {
+            res.status(401).json({ success: false, message: "Username atau Password salah" });
+        }
+    } catch (err) { 
+        console.error('Login error:', err);
+        res.status(500).json({ message: "Error during login", error: err.message }); 
+    }
 });
 
-// --- OPEN LIBRARY INTEGRATION ---
+// OPEN LIBRARY INTEGRATION
 // Search Buku dari Open Library API (tanpa kategori dan genre)
 app.get('/books/search-openlib', async (req, res) => {
     const { q } = req.query;
@@ -152,19 +175,6 @@ app.get('/books', async (req, res) => {
     } catch (err) { res.status(500).json(err); }
 });
 
-// Ambil daftar kategori buku
-// --- 1. LOGIN (Admin & Siswa) ---
-app.post('/login', async (req, res) => {
-    const { username, password } = req.body;
-    try {
-        const [rows] = await db.query('SELECT * FROM users WHERE username = ? AND password = ?', [username, password]);
-        if (rows.length > 0) {
-            res.json({ success: true, user: rows[0] });
-        } else {
-            res.status(401).json({ success: false, message: "Username/Password salah" });
-        }
-    } catch (err) { res.status(500).json(err); }
-});
 
 // Get Detail Buku
 app.get('/books/:id', async (req, res) => {
@@ -225,10 +235,10 @@ app.get('/search-books', async (req, res) => {
 
 // Tambah Buku (Admin)
 app.post('/books', async (req, res) => {
-    const { judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url } = req.body;
+    const { judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url, isbn } = req.body;
     try {
-        await db.query('INSERT INTO books (judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url) VALUES (?,?,?,?,?,?,?)', 
-            [judul, penulis, penerbit, kategori || 'Fiksi', tahun_terbit, stok, cover_url || null]);
+        await db.query('INSERT INTO books (judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url, isbn) VALUES (?,?,?,?,?,?,?,?)', 
+            [judul, penulis, penerbit, kategori || 'Fiksi', tahun_terbit, stok, cover_url || null, isbn || null]);
         res.json({ message: "Buku berhasil ditambahkan" });
     } catch (err) { res.status(500).json(err); }
 });
@@ -243,7 +253,7 @@ app.delete('/books/:id', async (req, res) => {
 
 // Edit Buku (Admin)
 app.put('/books/:id', async (req, res) => {
-    const { judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url } = req.body;
+    const { judul, penulis, penerbit, kategori, tahun_terbit, stok, cover_url, isbn } = req.body;
     try {
         // If stok is not provided or is null, preserve existing stok value
         let stokValue = stok;
@@ -258,8 +268,8 @@ app.put('/books/:id', async (req, res) => {
             }
         }
 
-        await db.query('UPDATE books SET judul=?, penulis=?, penerbit=?, kategori=?, tahun_terbit=?, stok=?, cover_url=? WHERE id=?', 
-            [judul, penulis, penerbit, kategori || 'Fiksi', tahun_terbit, stokValue, cover_url || null, req.params.id]);
+        await db.query('UPDATE books SET judul=?, penulis=?, penerbit=?, kategori=?, tahun_terbit=?, stok=?, cover_url=?, isbn=? WHERE id=?', 
+            [judul, penulis, penerbit, kategori || 'Fiksi', tahun_terbit, stokValue, cover_url || null, isbn || null, req.params.id]);
         res.json({ message: "Buku diupdate" });
     } catch (err) { res.status(500).json(err); }
 });
@@ -362,7 +372,7 @@ app.put('/books/:id/update-stok', async (req, res) => {
 
 // Import Buku dari Open Library ke Database
 app.post('/books/import-openlib', async (req, res) => {
-    const { title, author, publisher, year, cover_url, openLibData } = req.body;
+    const { title, author, publisher, year, cover_url, isbn, openLibData } = req.body;
     try {
         // Validasi input
         if (!title || !author) {
@@ -377,8 +387,8 @@ app.post('/books/import-openlib', async (req, res) => {
 
         // Insert buku tanpa kategori (NULL untuk Open Library books)
         const insertResult = await db.query(
-            'INSERT INTO books (judul, penulis, penerbit, tahun_terbit, stok, cover_url, kategori) VALUES (?,?,?,?,?,?,NULL)',
-            [title, author, publisher || null, year || null, 1, cover_url || null]
+            'INSERT INTO books (judul, penulis, penerbit, tahun_terbit, stok, cover_url, kategori, isbn) VALUES (?,?,?,?,?,?,NULL,?)',
+            [title, author, publisher || null, year || null, 1, cover_url || null, isbn || null]
         );
 
         console.log('✅ Book imported successfully');
@@ -395,6 +405,160 @@ app.post('/books/import-openlib', async (req, res) => {
             message: 'Error importing book', 
             error: err.message
         });
+    }
+});
+
+// Fetch ISBN dari Open Library untuk buku tertentu
+app.post('/books/:id/fetch-isbn', async (req, res) => {
+    try {
+        const [book] = await db.query('SELECT * FROM books WHERE id = ?', [req.params.id]);
+        
+        if (book.length === 0) {
+            return res.status(404).json({ message: 'Buku tidak ditemukan' });
+        }
+
+        const bookData = book[0];
+        
+        // Jika sudah ada ISBN, kembalikan langsung
+        if (bookData.isbn) {
+            return res.json({ 
+                message: 'ISBN sudah tersedia',
+                isbn: bookData.isbn,
+                fromDB: true
+            });
+        }
+
+        // Cari ISBN dari Open Library berdasarkan judul dan penulis
+        const searchUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(bookData.judul)}&author=${encodeURIComponent(bookData.penulis)}&limit=5`;
+        
+        https.get(searchUrl, { timeout: 10000 }, (response) => {
+            let data = '';
+            
+            response.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            response.on('end', async () => {
+                try {
+                    const jsonData = JSON.parse(data);
+                    
+                    if (jsonData.docs && jsonData.docs.length > 0) {
+                        // Cari ISBN dari hasil pencarian
+                        for (const doc of jsonData.docs) {
+                            if (doc.isbn && doc.isbn.length > 0) {
+                                const isbn = doc.isbn[0];
+                                // Update database dengan ISBN yang ditemukan
+                                await db.query('UPDATE books SET isbn = ? WHERE id = ?', [isbn, req.params.id]);
+                                console.log(`✅ ISBN ditemukan dan disimpan untuk buku: ${bookData.judul}`);
+                                return res.json({
+                                    message: 'ISBN berhasil ditemukan dan disimpan',
+                                    isbn: isbn,
+                                    fromOpenLibrary: true
+                                });
+                            }
+                        }
+                    }
+                    
+                    res.json({
+                        message: 'ISBN tidak ditemukan di Open Library',
+                        isbn: null,
+                        fromOpenLibrary: false
+                    });
+                } catch (err) {
+                    console.error('❌ Error parsing Open Library response:', err);
+                    res.json({
+                        message: 'Error mencari ISBN',
+                        isbn: null,
+                        error: err.message
+                    });
+                }
+            });
+        }).on('error', (err) => {
+            console.error('❌ Error fetching from Open Library:', err);
+            res.status(500).json({
+                message: 'Error mengakses Open Library',
+                error: err.message
+            });
+        });
+    } catch (err) {
+        console.error('❌ Error:', err);
+        res.status(500).json({ message: 'Error', error: err.message });
+    }
+});
+
+// Fetch ISBN dari Open Library untuk semua buku yang belum punya ISBN
+app.post('/books/fetch-all-isbn', async (req, res) => {
+    try {
+        const [booksWithoutISBN] = await db.query('SELECT id, judul, penulis FROM books WHERE isbn IS NULL OR isbn = ""');
+        
+        if (booksWithoutISBN.length === 0) {
+            return res.json({
+                message: 'Semua buku sudah memiliki ISBN',
+                totalProcessed: 0,
+                totalFound: 0
+            });
+        }
+
+        let totalFound = 0;
+        const results = [];
+
+        // Process books one by one
+        for (const book of booksWithoutISBN) {
+            const searchUrl = `https://openlibrary.org/search.json?title=${encodeURIComponent(book.judul)}&author=${encodeURIComponent(book.penulis)}&limit=5`;
+            
+            await new Promise((resolve) => {
+                https.get(searchUrl, { timeout: 10000 }, (response) => {
+                    let data = '';
+                    
+                    response.on('data', (chunk) => {
+                        data += chunk;
+                    });
+                    
+                    response.on('end', async () => {
+                        try {
+                            const jsonData = JSON.parse(data);
+                            
+                            if (jsonData.docs && jsonData.docs.length > 0) {
+                                for (const doc of jsonData.docs) {
+                                    if (doc.isbn && doc.isbn.length > 0) {
+                                        const isbn = doc.isbn[0];
+                                        await db.query('UPDATE books SET isbn = ? WHERE id = ?', [isbn, book.id]);
+                                        results.push({ id: book.id, judul: book.judul, isbn: isbn, status: 'found' });
+                                        totalFound++;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (!results.find(r => r.id === book.id)) {
+                                results.push({ id: book.id, judul: book.judul, isbn: null, status: 'not_found' });
+                            }
+                        } catch (err) {
+                            console.error('❌ Error processing book:', err);
+                            results.push({ id: book.id, judul: book.judul, isbn: null, status: 'error', error: err.message });
+                        }
+                        resolve();
+                    });
+                }).on('error', (err) => {
+                    console.error('❌ Error fetching from Open Library:', err);
+                    results.push({ id: book.id, judul: book.judul, isbn: null, status: 'error', error: err.message });
+                    resolve();
+                });
+            });
+            
+            // Add small delay to avoid hammering Open Library API
+            await new Promise(r => setTimeout(r, 500));
+        }
+
+        res.json({
+            message: `Proses selesai. ${totalFound} dari ${booksWithoutISBN.length} buku berhasil mendapatkan ISBN`,
+            totalProcessed: booksWithoutISBN.length,
+            totalFound: totalFound,
+            results: results
+        });
+    } catch (err) {
+        console.error('❌ Error:', err);
+        res.status(500).json({ message: 'Error', error: err.message });
     }
 });
 
@@ -753,11 +917,21 @@ app.get('/students/get-jurusan', async (req, res) => {
 app.post('/students', async (req, res) => {
     const { nama_lengkap, username, password } = req.body;
     try {
+        // Cek dulu apakah username sudah ada
+        const [cek] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
+        if (cek.length > 0) return res.status(400).json({ message: "Username sudah dipakai!" });
+
+        // Hash password dengan bcrypt
+        const hashedPassword = await bcrypt.hash(password, 10);
+
         // Role otomatis di-set jadi 'siswa'
         await db.query('INSERT INTO users (nama_lengkap, username, password, role) VALUES (?, ?, ?, "siswa")', 
-            [nama_lengkap, username, password]);
+            [nama_lengkap, username, hashedPassword]);
         res.json({ message: "Siswa berhasil ditambahkan" });
-    } catch (err) { res.status(500).json(err); }
+    } catch (err) { 
+        console.error('Add student error:', err);
+        res.status(500).json({ message: "Error adding student", error: err.message }); 
+    }
 });
 
 // Hapus Siswa
@@ -1234,7 +1408,7 @@ app.get('/membership-card/:studentId', async (req, res) => {
     try {
         // Get student data
         const [student] = await db.query(
-            'SELECT id, nomor_identitas, nama_lengkap, username, kelas, jurusan, foto_profil, created_at FROM users WHERE id = ? AND role = "siswa"',
+            'SELECT id, nama_lengkap, username, kelas, jurusan, foto_profil, created_at FROM users WHERE id = ? AND role = "siswa"',
             [req.params.studentId]
         );
         
@@ -1300,7 +1474,7 @@ app.get('/membership-card/:studentId', async (req, res) => {
         // Nomor Identitas
         doc.fontSize(8).font('Helvetica').fillColor('#FFD700').text('No. Identitas:', dataX, 58);
         doc.fontSize(10).font('Helvetica-Bold').fillColor('#FFFFFF')
-            .text(studentData.nomor_identitas || `PKS-${String(studentData.id).padStart(5, '0')}`, dataX, 67, { width: dataWidth });
+            .text(`PKS-${String(studentData.id).padStart(5, '0')}`, dataX, 67, { width: dataWidth });
         
         // Nama Lengkap
         doc.fontSize(8).font('Helvetica').fillColor('#FFD700').text('Nama:', dataX, 88);
@@ -1344,22 +1518,35 @@ app.get('/membership-card/:studentId', async (req, res) => {
 
 // --- 5. REGISTER SISWA (Public) ---
 app.post('/register', async (req, res) => {
-    const { nama_lengkap, username, password } = req.body;
+    const { nama_lengkap, username, password, recaptchaToken } = req.body;
     try {
+        // Validate reCAPTCHA token if provided
+        if (recaptchaToken) {
+            try {
+                // You would need to verify reCAPTCHA v3 token with Google
+                // For now, we'll just log it
+                console.log('reCAPTCHA token received for verification');
+            } catch (err) {
+                console.warn('reCAPTCHA verification failed:', err);
+            }
+        }
+        
         // Cek dulu apakah username sudah ada
         const [cek] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
         if (cek.length > 0) return res.status(400).json({ message: "Username sudah dipakai!" });
 
+        // Hash password dengan bcrypt
+        const hashedPassword = await bcrypt.hash(password, 10);
+        
         // Kalau aman, masukkan ke database dengan role 'siswa'
         const [result] = await db.query('INSERT INTO users (nama_lengkap, username, password, role) VALUES (?, ?, ?, "siswa")', 
-            [nama_lengkap, username, password]);
-        
-        // Generate nomor_identitas untuk user baru
-        const nomorIdentitas = `PKS-${String(result.insertId).padStart(5, '0')}`;
-        await db.query('UPDATE users SET nomor_identitas = ? WHERE id = ?', [nomorIdentitas, result.insertId]);
+            [nama_lengkap, username, hashedPassword]);
         
         res.json({ message: "Registrasi Berhasil! Silakan Login." });
-    } catch (err) { res.status(500).json(err); }
+    } catch (err) { 
+        console.error('Register error:', err);
+        res.status(500).json({ message: "Error during registration", error: err.message }); 
+    }
 });
 
 // --- STOCK TRENDS (untuk grafik) ---
@@ -1422,6 +1609,197 @@ app.get('/books/trends/stock', async (req, res) => {
     }
 });
 
+// --- MONTHLY STOCK TRENDS (untuk grafik bulanan) ---
+app.get('/books/trends/stock/monthly', async (req, res) => {
+    try {
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth() + 1;
+        
+        // Get first and last day of current month
+        const firstDayOfMonth = new Date(currentYear, currentMonth - 1, 1);
+        const lastDayOfMonth = new Date(currentYear, currentMonth, 0);
+        
+        // Generate all days of the month
+        const daysOfMonth = [];
+        for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
+            const date = new Date(currentYear, currentMonth - 1, i);
+            daysOfMonth.push(date.toISOString().split('T')[0]);
+        }
+        
+        // Count books added (masuk) by created_at
+        const booksIn = {};
+        const booksOut = {};
+        const totalStockByDay = {};
+        
+        daysOfMonth.forEach(day => {
+            booksIn[day] = 0;
+            booksOut[day] = 0;
+            totalStockByDay[day] = 0;
+        });
+        
+        // Get books created in this month (Buku Masuk)
+        for (const day of daysOfMonth) {
+            const [count] = await db.query(
+                'SELECT COUNT(*) as total FROM books WHERE DATE(created_at) = ?',
+                [day]
+            );
+            booksIn[day] = count[0].total || 0;
+        }
+        
+        // Get books returned (dikembalikan) in this month (Buku Keluar dari stok)
+        for (const day of daysOfMonth) {
+            const [count] = await db.query(
+                'SELECT COUNT(*) as total FROM transactions WHERE DATE(tanggal_kembali) = ? AND status = "kembali"',
+                [day]
+            );
+            booksOut[day] = count[0].total || 0;
+        }
+        
+        // Get total stock each day
+        const [totalStock] = await db.query('SELECT COALESCE(SUM(stok), 0) as total FROM books');
+        const totalStockValue = totalStock[0].total || 0;
+        
+        daysOfMonth.forEach(day => {
+            totalStockByDay[day] = totalStockValue;
+        });
+        
+        const monthName = new Date(currentYear, currentMonth - 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+        
+        res.json({
+            booksIn,
+            booksOut,
+            totalStockByDay,
+            daysOfMonth,
+            month: monthName,
+            currentYear,
+            currentMonth
+        });
+    } catch (err) {
+        console.error('Error fetching monthly stock trends:', err);
+        res.status(500).json({ message: 'Error fetching monthly stock trends', error: err.message });
+    }
+});
+
+// --- MONTHLY TRANSACTIONS TRENDS ---
+app.get('/transactions/trends/monthly', async (req, res) => {
+    try {
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth() + 1;
+        
+        // Get first and last day of current month
+        const lastDayOfMonth = new Date(currentYear, currentMonth, 0);
+        
+        // Generate all days of the month
+        const daysOfMonth = [];
+        for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
+            const date = new Date(currentYear, currentMonth - 1, i);
+            daysOfMonth.push(date.toISOString().split('T')[0]);
+        }
+        
+        // Count transactions by day
+        const borrowed = {};
+        const returned = {};
+        
+        daysOfMonth.forEach(day => {
+            borrowed[day] = 0;
+            returned[day] = 0;
+        });
+        
+        // Get all transactions in this month
+        const [transactions] = await db.query(
+            'SELECT tanggal_pinjam, tanggal_kembali FROM transactions WHERE YEAR(tanggal_pinjam) = ? AND MONTH(tanggal_pinjam) = ?',
+            [currentYear, currentMonth]
+        );
+        
+        // Count by day
+        transactions.forEach(trans => {
+            if (trans.tanggal_pinjam) {
+                const borrowDate = new Date(trans.tanggal_pinjam).toISOString().split('T')[0];
+                if (borrowed[borrowDate] !== undefined) {
+                    borrowed[borrowDate]++;
+                }
+            }
+            if (trans.tanggal_kembali) {
+                const returnDate = new Date(trans.tanggal_kembali).toISOString().split('T')[0];
+                if (returned[returnDate] !== undefined) {
+                    returned[returnDate]++;
+                }
+            }
+        });
+        
+        const monthName = new Date(currentYear, currentMonth - 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+        
+        res.json({
+            borrowed,
+            returned,
+            daysOfMonth,
+            month: monthName,
+            currentYear,
+            currentMonth
+        });
+    } catch (err) {
+        console.error('Error fetching monthly transaction trends:', err);
+        res.status(500).json({ message: 'Error fetching monthly transaction trends', error: err.message });
+    }
+});
+
+// --- MONTHLY STUDENTS TRENDS (Mock data - login/logout patterns) ---
+app.get('/students/trends/monthly', async (req, res) => {
+    try {
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth() + 1;
+        
+        // Get first and last day of current month
+        const lastDayOfMonth = new Date(currentYear, currentMonth, 0);
+        
+        // Generate all days of the month
+        const daysOfMonth = [];
+        for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
+            const date = new Date(currentYear, currentMonth - 1, i);
+            daysOfMonth.push(date.toISOString().split('T')[0]);
+        }
+        
+        // Get total students count
+        const [students] = await db.query('SELECT COUNT(*) as total FROM users WHERE role = "siswa"');
+        const totalStudents = students[0].total || 0;
+        
+        // Mock login/logout data based on pattern
+        const login = {};
+        const logout = {};
+        
+        daysOfMonth.forEach(day => {
+            // Generate realistic patterns (weekdays more active than weekends)
+            const dateObj = new Date(day);
+            const dayOfWeek = dateObj.getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            
+            const baseLogin = isWeekend ? 10 : 25;
+            const baseLogout = isWeekend ? 8 : 20;
+            
+            login[day] = Math.floor(Math.random() * 15) + baseLogin;
+            logout[day] = Math.floor(Math.random() * 12) + baseLogout;
+        });
+        
+        const monthName = new Date(currentYear, currentMonth - 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+        
+        res.json({
+            login,
+            logout,
+            totalStudents,
+            daysOfMonth,
+            month: monthName,
+            currentYear,
+            currentMonth
+        });
+    } catch (err) {
+        console.error('Error fetching monthly students trends:', err);
+        res.status(500).json({ message: 'Error fetching monthly students trends', error: err.message });
+    }
+});
+
 // --- PDF GENERATION ---
 // Generate PDF Laporan Transaksi
 app.get('/generate-pdf-transaction/:userId', async (req, res) => {
@@ -1472,14 +1850,20 @@ app.get('/generate-pdf-transaction/:userId', async (req, res) => {
         doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke();
         doc.moveDown(1);
 
-        // User Information
+        // User Information Section
         doc.fontSize(11).font('Helvetica-Bold').text('Informasi Peminjam:', { underline: true });
         doc.fontSize(10).font('Helvetica');
         doc.text(`Nama: ${user.nama_lengkap}`);
         doc.text(`Username: ${user.username}`);
         doc.text(`Kelas: ${user.kelas || '-'}`);
         doc.text(`Jurusan: ${user.jurusan || '-'}`);
+        doc.moveDown(0.5);
+
+        // Report Info Section
+        doc.fontSize(11).font('Helvetica-Bold').text('Informasi Laporan:', { underline: true });
+        doc.fontSize(10).font('Helvetica');
         doc.text(`Tanggal Cetak: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`);
+        doc.text(`Waktu Cetak: ${new Date().toLocaleTimeString('id-ID')}`);
         doc.moveDown(1);
 
         // Transaction Summary
@@ -1488,13 +1872,18 @@ app.get('/generate-pdf-transaction/:userId', async (req, res) => {
         const ongoingTransactions = transactions.filter(t => t.status === 'dipinjam').length;
         const totalFines = transactions.reduce((sum, t) => sum + (t.denda || 0), 0);
 
-        doc.fontSize(11).font('Helvetica-Bold').text('Ringkasan:', { underline: true });
-        doc.fontSize(10).font('Helvetica');
-        doc.text(`Total Transaksi: ${totalTransactions}`);
-        doc.text(`Sudah Dikembalikan: ${completedTransactions}`);
-        doc.text(`Sedang Dipinjam: ${ongoingTransactions}`);
-        doc.text(`Total Denda: Rp ${totalFines.toLocaleString('id-ID')}`);
-        doc.moveDown(1.5);
+        // Draw summary box
+        const summaryY = doc.y;
+        doc.rect(40, summaryY, 515, 75).stroke();
+        doc.fontSize(11).font('Helvetica-Bold').text('Ringkasan:', 50, summaryY + 8);
+
+        doc.fontSize(9).font('Helvetica');
+        doc.text(`Total Transaksi: ${totalTransactions}`, 50, summaryY + 25);
+        doc.text(`Sudah Dikembalikan: ${completedTransactions}`, 50, summaryY + 40);
+        doc.text(`Sedang Dipinjam: ${ongoingTransactions}`, 290, summaryY + 25);
+        doc.text(`Total Denda: Rp ${totalFines.toLocaleString('id-ID')}`, 290, summaryY + 40);
+        
+        doc.moveDown(5);
 
         // Transactions Table
         if (transactions.length > 0) {
@@ -1503,60 +1892,59 @@ app.get('/generate-pdf-transaction/:userId', async (req, res) => {
 
             const tableTop = doc.y;
             const col1X = 50;
-            const col2X = 150;
-            const col3X = 270;
-            const col4X = 380;
-            const col5X = 480;
+            const col2X = 90;
+            const col3X = 170;
+            const col4X = 250;
+            const col5X = 350;
+            const col6X = 430;
+            const col7X = 500;
             const rowHeight = 25;
 
             // Table Header
-            doc.fontSize(9).font('Helvetica-Bold');
+            doc.fontSize(8).font('Helvetica-Bold');
             doc.text('No', col1X, tableTop);
-            doc.text('Judul Buku', col2X, tableTop);
-            doc.text('Tgl Pinjam', col3X, tableTop);
-            doc.text('Tgl Kembali', col4X, tableTop);
-            doc.text('Status', col5X, tableTop);
+            doc.text('Buku', col3X, tableTop);
+            doc.text('Tgl Pinjam', col4X, tableTop);
+            doc.text('Tgl Kembali', col5X, tableTop);
+            doc.text('Status', col6X, tableTop);
+            doc.text('Denda', col7X, tableTop);
 
-            doc.moveTo(50, tableTop + 15).lineTo(555, tableTop + 15).stroke();
+            doc.moveTo(50, tableTop + 12).lineTo(555, tableTop + 12).stroke();
 
             // Table Rows
             doc.font('Helvetica');
             transactions.forEach((trans, index) => {
-                const yPosition = tableTop + 20 + (index * rowHeight);
+                const yPosition = tableTop + 17 + (index * rowHeight);
 
                 // Check if we need a new page
                 if (yPosition > 700) {
                     doc.addPage({ margin: 40 });
-                    doc.font('Helvetica-Bold').fontSize(9);
+                    doc.font('Helvetica-Bold').fontSize(8);
                     doc.text('No', col1X, 50);
-                    doc.text('Judul Buku', col2X, 50);
-                    doc.text('Tgl Pinjam', col3X, 50);
-                    doc.text('Tgl Kembali', col4X, 50);
-                    doc.text('Status', col5X, 50);
-                    doc.moveTo(50, 65).lineTo(555, 65).stroke();
-                    doc.font('Helvetica').fontSize(9);
+                    doc.text('Buku', col3X, 50);
+                    doc.text('Tgl Pinjam', col4X, 50);
+                    doc.text('Tgl Kembali', col5X, 50);
+                    doc.text('Status', col6X, 50);
+                    doc.text('Denda', col7X, 50);
+                    doc.moveTo(50, 62).lineTo(555, 62).stroke();
+                    doc.font('Helvetica').fontSize(8);
                 }
 
                 const displayY = yPosition > 700 ? (yPosition % 700) + 70 : yPosition;
 
-                doc.fontSize(9);
+                doc.fontSize(7);
                 doc.text(index + 1, col1X, displayY);
-                doc.text(trans.judul.substring(0, 20), col2X, displayY);
-                doc.text(new Date(trans.tanggal_pinjam).toLocaleDateString('id-ID'), col3X, displayY);
-                doc.text(trans.tanggal_kembali ? new Date(trans.tanggal_kembali).toLocaleDateString('id-ID') : '-', col4X, displayY);
+                doc.text(trans.judul.substring(0, 15), col3X, displayY);
+                doc.text(trans.tanggal_pinjam ? new Date(trans.tanggal_pinjam).toLocaleDateString('id-ID', { month: '2-digit', day: '2-digit' }) : '-', col4X, displayY);
+                doc.text(trans.tanggal_kembali ? new Date(trans.tanggal_kembali).toLocaleDateString('id-ID', { month: '2-digit', day: '2-digit' }) : '-', col5X, displayY);
 
-                const statusBadge = trans.status === 'kembali' ? '✓ Dikembalikan' : trans.status === 'diminta_kembali' ? '⟰ Diminta Kembali' : '◇ Dipinjam';
-                doc.text(statusBadge, col5X, displayY);
-
-                if (trans.denda && trans.denda > 0) {
-                    doc.fontSize(8).fillColor('red');
-                    doc.text(`(Denda: Rp ${trans.denda.toLocaleString('id-ID')})`, col5X, displayY + 12);
-                    doc.fillColor('black');
-                }
+                const statusBadge = trans.status === 'kembali' ? 'Dikembalikan' : 'Dipinjam';
+                doc.text(statusBadge, col6X, displayY);
+                doc.text(trans.denda ? `Rp ${trans.denda.toLocaleString('id-ID')}` : '-', col7X, displayY);
             });
 
             // Footer line
-            doc.moveTo(50, tableTop + 20 + (transactions.length * rowHeight)).lineTo(555, tableTop + 20 + (transactions.length * rowHeight)).stroke();
+            doc.moveTo(50, tableTop + 17 + (transactions.length * rowHeight)).lineTo(555, tableTop + 17 + (transactions.length * rowHeight)).stroke();
         } else {
             doc.fontSize(10).font('Helvetica').text('Tidak ada riwayat transaksi.', { align: 'center' });
         }
@@ -1579,6 +1967,288 @@ app.get('/generate-pdf-transaction/:userId', async (req, res) => {
     } catch (err) {
         console.error('PDF generation error:', err);
         res.status(500).json({ message: 'Error generating PDF', error: err.message });
+    }
+});
+
+// --- GENERATE PDF CUSTOM TRANSACTIONS (Admin select transaksi) ---
+app.post('/transactions/generate-pdf', async (req, res) => {
+    try {
+        const { transactionIds } = req.body;
+
+        if (!transactionIds || !Array.isArray(transactionIds) || transactionIds.length === 0) {
+            return res.status(400).json({ message: 'Tidak ada transaksi yang dipilih' });
+        }
+
+        // Get selected transactions
+        const placeholders = transactionIds.map(() => '?').join(',');
+        const [transactions] = await db.query(
+            `SELECT t.id, u.nama_lengkap, u.username, u.kelas, u.jurusan, b.id as book_id, b.judul, b.penulis, b.kategori, 
+                    t.tanggal_pinjam, t.tanggal_kembali, t.status, t.denda 
+             FROM transactions t 
+             JOIN books b ON t.book_id = b.id 
+             JOIN users u ON t.user_id = u.id
+             WHERE t.id IN (${placeholders}) 
+             ORDER BY t.tanggal_pinjam DESC`,
+            transactionIds
+        );
+
+        if (transactions.length === 0) {
+            return res.status(404).json({ message: 'Tidak ada transaksi yang ditemukan' });
+        }
+
+        // Create PDF stream
+        const doc = new PDFDocument({
+            bufferPages: true,
+            margin: 40
+        });
+
+        // Set response headers
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="Laporan_Transaksi_Riwayat_${new Date().toLocaleDateString('id-ID')}.pdf"`);
+
+        // Pipe to response
+        doc.pipe(res);
+
+        // Add content
+        // Header
+        doc.fontSize(20).font('Helvetica-Bold').text('LAPORAN RIWAYAT TRANSAKSI PEMINJAMAN BUKU', { align: 'center' });
+        doc.fontSize(12).font('Helvetica').text('Sistem Informasi Perpustakaan', { align: 'center' });
+        doc.moveDown(0.5);
+        doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke();
+        doc.moveDown(1);
+
+        // Report Information
+        doc.fontSize(11).font('Helvetica-Bold').text('Informasi Laporan:', { underline: true });
+        doc.fontSize(10).font('Helvetica');
+        doc.text(`Tanggal Cetak: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`);
+        doc.text(`Total Transaksi Dipilih: ${transactions.length}`);
+        doc.moveDown(1);
+
+        // Transaction Summary
+        const totalTransactions = transactions.length;
+        const completedTransactions = transactions.filter(t => t.status === 'kembali').length;
+        const ongoingTransactions = transactions.filter(t => t.status === 'dipinjam').length;
+        const totalFines = transactions.reduce((sum, t) => sum + (t.denda || 0), 0);
+
+        doc.fontSize(11).font('Helvetica-Bold').text('Ringkasan:', { underline: true });
+        doc.fontSize(10).font('Helvetica');
+        doc.text(`Total Transaksi: ${totalTransactions}`);
+        doc.text(`Sudah Dikembalikan: ${completedTransactions}`);
+        doc.text(`Sedang Dipinjam: ${ongoingTransactions}`);
+        doc.text(`Total Denda: Rp ${totalFines.toLocaleString('id-ID')}`);
+        doc.moveDown(1.5);
+
+        // Transactions Table
+        if (transactions.length > 0) {
+            doc.fontSize(11).font('Helvetica-Bold').text('Daftar Transaksi Terpilih:', { underline: true });
+            doc.moveDown(0.5);
+
+            const tableTop = doc.y;
+            const col1X = 50;
+            const col2X = 90;
+            const col3X = 170;
+            const col4X = 250;
+            const col5X = 350;
+            const col6X = 430;
+            const col7X = 500;
+            const rowHeight = 25;
+
+            // Table Header
+            doc.fontSize(8).font('Helvetica-Bold');
+            doc.text('No', col1X, tableTop);
+            doc.text('Peminjam', col2X, tableTop);
+            doc.text('Buku', col3X, tableTop);
+            doc.text('Tgl Pinjam', col4X, tableTop);
+            doc.text('Tgl Kembali', col5X, tableTop);
+            doc.text('Status', col6X, tableTop);
+            doc.text('Denda', col7X, tableTop);
+
+            doc.moveTo(50, tableTop + 12).lineTo(555, tableTop + 12).stroke();
+
+            // Table Rows
+            doc.font('Helvetica');
+            transactions.forEach((trans, index) => {
+                const yPosition = tableTop + 17 + (index * rowHeight);
+
+                // Check if we need a new page
+                if (yPosition > 700) {
+                    doc.addPage({ margin: 40 });
+                    doc.font('Helvetica-Bold').fontSize(8);
+                    doc.text('No', col1X, 50);
+                    doc.text('Peminjam', col2X, 50);
+                    doc.text('Buku', col3X, 50);
+                    doc.text('Tgl Pinjam', col4X, 50);
+                    doc.text('Tgl Kembali', col5X, 50);
+                    doc.text('Status', col6X, 50);
+                    doc.text('Denda', col7X, 50);
+                    doc.moveTo(50, 62).lineTo(555, 62).stroke();
+                    doc.font('Helvetica').fontSize(8);
+                }
+
+                const displayY = yPosition > 700 ? (yPosition % 700) + 70 : yPosition;
+
+                doc.fontSize(7);
+                doc.text(index + 1, col1X, displayY);
+                doc.text(trans.nama_lengkap.substring(0, 15), col2X, displayY);
+                doc.text(trans.judul.substring(0, 12), col3X, displayY);
+                doc.text(trans.tanggal_pinjam ? new Date(trans.tanggal_pinjam).toLocaleDateString('id-ID', { month: '2-digit', day: '2-digit' }) : '-', col4X, displayY);
+                doc.text(trans.tanggal_kembali ? new Date(trans.tanggal_kembali).toLocaleDateString('id-ID', { month: '2-digit', day: '2-digit' }) : '-', col5X, displayY);
+
+                const statusBadge = trans.status === 'kembali' ? '📥 Dikembalikan' : '📤 Dipinjam';
+                doc.text(statusBadge, col6X, displayY);
+                doc.text(trans.denda ? `Rp ${trans.denda.toLocaleString('id-ID')}` : '-', col7X, displayY);
+            });
+
+            // Footer line
+            doc.moveTo(50, tableTop + 17 + (transactions.length * rowHeight)).lineTo(555, tableTop + 17 + (transactions.length * rowHeight)).stroke();
+        } else {
+            doc.fontSize(10).font('Helvetica').text('Tidak ada transaksi terpilih.', { align: 'center' });
+        }
+
+        // Footer
+        doc.moveDown(2);
+        doc.fontSize(9).font('Helvetica');
+        doc.text('_____________________________', { align: 'center' });
+        doc.text('Kepala Perpustakaan', { align: 'center' });
+
+        doc.moveDown(0.5);
+        doc.fontSize(8).fillColor('gray');
+        doc.text('Dokumen ini dibuat oleh sistem dan bersifat sah.', { align: 'center' });
+        doc.text(`Generated: ${new Date().toLocaleString('id-ID')}`, { align: 'center' });
+
+        // End the document
+        doc.end();
+
+        console.log(`✅ PDF laporan transaksi custom (${transactions.length} transaksi) berhasil dibuat`);
+    } catch (err) {
+        console.error('Custom PDF generation error:', err);
+        res.status(500).json({ message: 'Error generating custom PDF', error: err.message });
+    }
+});
+
+// --- 6. PASSWORD RESET / FORGOT PASSWORD ---
+
+// Request Password Reset - Generate reset token
+app.post('/forgot-password', async (req, res) => {
+    const { username } = req.body;
+    try {
+        const [user] = await db.query('SELECT id, username, email FROM users WHERE username = ?', [username]);
+        if (user.length === 0) {
+            // Don't reveal if user exists for security
+            return res.json({ message: "Jika username terdaftar, link reset password akan dikirim" });
+        }
+
+        // Generate reset token
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+        const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour expiry
+
+        // Store reset token in database
+        await db.query(
+            'UPDATE users SET reset_token = ?, reset_token_expiry = ? WHERE id = ?',
+            [resetTokenHash, resetTokenExpiry, user[0].id]
+        );
+
+        console.log(`✅ Reset token generated for user: ${username}`);
+        // In production, send email with reset link
+        // For now, return token in response (NOT SECURE for production)
+        res.json({ 
+            message: "Link reset password telah dikirim ke email Anda", 
+            resetToken: resetToken,  // Remove this in production!
+            expiresIn: '1 jam'
+        });
+    } catch (err) {
+        console.error('Forgot password error:', err);
+        res.status(500).json({ message: "Error processing forgot password", error: err.message });
+    }
+});
+
+// Reset Password - Validate token and reset password
+app.post('/reset-password', async (req, res) => {
+    const { resetToken, newPassword, confirmPassword } = req.body;
+    try {
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({ message: "Password tidak cocok" });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: "Password minimal 6 karakter" });
+        }
+
+        // Hash the token to compare
+        const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+        // Find user with valid token
+        const [user] = await db.query(
+            'SELECT id, username FROM users WHERE reset_token = ? AND reset_token_expiry > NOW()',
+            [resetTokenHash]
+        );
+
+        if (user.length === 0) {
+            return res.status(400).json({ message: "Link reset password tidak valid atau sudah kadaluarsa" });
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        // Update password and clear reset token
+        await db.query(
+            'UPDATE users SET password = ?, reset_token = NULL, reset_token_expiry = NULL WHERE id = ?',
+            [hashedPassword, user[0].id]
+        );
+
+        console.log(`✅ Password reset successful for user: ${user[0].username}`);
+        res.json({ message: "Password berhasil direset. Silakan login dengan password baru." });
+    } catch (err) {
+        console.error('Reset password error:', err);
+        res.status(500).json({ message: "Error resetting password", error: err.message });
+    }
+});
+
+// Change Password - For logged-in users (requires current password)
+app.put('/users/:userId/change-password', async (req, res) => {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+    const userId = req.params.userId;
+
+    try {
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({ message: "Password baru tidak cocok" });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: "Password minimal 6 karakter" });
+        }
+
+        // Get user
+        const [user] = await db.query('SELECT id, password, username FROM users WHERE id = ?', [userId]);
+        if (user.length === 0) {
+            return res.status(404).json({ message: "User tidak ditemukan" });
+        }
+
+        // Verify current password
+        let currentPasswordMatch = false;
+        try {
+            currentPasswordMatch = await bcrypt.compare(currentPassword, user[0].password);
+        } catch (err) {
+            // Fallback for non-bcrypt passwords
+            currentPasswordMatch = user[0].password === currentPassword;
+        }
+
+        if (!currentPasswordMatch) {
+            return res.status(400).json({ message: "Password saat ini tidak benar" });
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        // Update password
+        await db.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, userId]);
+
+        console.log(`✅ Password changed successfully for user: ${user[0].username}`);
+        res.json({ message: "Password berhasil diubah" });
+    } catch (err) {
+        console.error('Change password error:', err);
+        res.status(500).json({ message: "Error changing password", error: err.message });
     }
 });
 

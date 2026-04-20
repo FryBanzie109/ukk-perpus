@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import ReCAPTCHA from "react-google-recaptcha";
+import { triggerUserUpdate } from '../hooks/useUser';
 
 export default function Login() {
     const [isRegister, setIsRegister] = useState(false);
@@ -8,7 +10,10 @@ export default function Login() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const [recaptchaToken, setRecaptchaToken] = useState('');
     const navigate = useNavigate();
+
+    const RECAPTCHA_SITE_KEY = '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI'; // Test key - replace with your actual key
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -16,17 +21,25 @@ export default function Login() {
         
         // --- MODE REGISTER ---
         if (isRegister) {
+            if (!recaptchaToken) {
+                alert('Silakan verifikasi reCAPTCHA');
+                setLoading(false);
+                return;
+            }
+
             try {
                 await axios.post('http://localhost:5000/register', { 
                     nama_lengkap: nama, 
                     username, 
-                    password 
+                    password,
+                    recaptchaToken 
                 });
                 alert('Registrasi Berhasil! Silakan Login.');
                 setIsRegister(false);
                 setNama(''); 
                 setUsername(''); 
                 setPassword('');
+                setRecaptchaToken('');
             } catch (err) {
                 alert(err.response?.data?.message || 'Gagal Daftar');
             }
@@ -40,14 +53,25 @@ export default function Login() {
                     console.log('User object to save:', res.data.user);
                     console.log('User role:', res.data.user.role);
                     localStorage.setItem('user', JSON.stringify(res.data.user));
+                    // Trigger user update event untuk sync state di App.jsx
+                    triggerUserUpdate(res.data.user);
                     alert('Login Berhasil!');
-                    navigate('/dashboard');
+                    // Redirect based on user role
+                    if (res.data.user.role === 'admin') {
+                        navigate('/dashboard');
+                    } else {
+                        navigate('/catalog');
+                    }
                 }
             } catch {
                 alert('Username atau Password Salah!');
             }
         }
         setLoading(false);
+    };
+
+    const handleRecaptchaChange = (token) => {
+        setRecaptchaToken(token);
     };
 
     return (
@@ -99,6 +123,16 @@ export default function Login() {
                             required 
                         />
                     </div>
+
+                    {/* reCAPTCHA hanya untuk Register */}
+                    {isRegister && (
+                        <div className="mb-4">
+                            <ReCAPTCHA 
+                                sitekey={RECAPTCHA_SITE_KEY}
+                                onChange={handleRecaptchaChange}
+                            />
+                        </div>
+                    )}
                     
                     <button 
                         type="submit"
@@ -120,12 +154,26 @@ export default function Login() {
                                 setNama('');
                                 setUsername('');
                                 setPassword('');
+                                setRecaptchaToken('');
                             }}
                         >
                             {isRegister ? 'Login disini' : 'Daftar disini'}
                         </span>
                     </small>
                 </div>
+
+                {!isRegister && (
+                    <div className="text-center mt-2">
+                        <small style={{ color: 'var(--text-secondary)' }}>
+                            <span 
+                                style={{ cursor: 'pointer', fontWeight: 'bold', color: '#60a5fa' }}
+                                onClick={() => navigate('/forgot-password')}
+                            >
+                                Lupa Password?
+                            </span>
+                        </small>
+                    </div>
+                )}
             </div>
         </div>
     );

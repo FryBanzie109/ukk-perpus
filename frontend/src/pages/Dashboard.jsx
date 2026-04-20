@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
-import { BooksChart, StudentsChart, TransactionsChart } from '../components/Charts';
+import { useUser } from '../hooks/useUser';
+import { BooksChart, StudentsChart, TransactionsChart, BooksChartMonthly, StudentsChartMonthly, TransactionsChartMonthly } from '../components/Charts';
 
 // Hardcoded constants untuk kelas, jurusan, dan kategori
 const DAFTAR_KELAS = ['X', 'XI', 'XII'];
@@ -22,6 +23,8 @@ const DAFTAR_KATEGORI = [
 
 export default function Dashboard() {
     const { isDark } = useTheme();
+    const user = useUser();
+    const navigate = useNavigate();
     const [books, setBooks] = useState([]);
     const [transactions, setTransactions] = useState([]);
     const [students, setStudents] = useState([]);
@@ -29,8 +32,11 @@ export default function Dashboard() {
     const [myBorrowingHistory, setMyBorrowingHistory] = useState([]);
     const [activeTab, setActiveTab] = useState('katalog');
     const [activeTabSiswa, setActiveTabSiswa] = useState('katalog'); // Tab untuk siswa
-    const [user, setUser] = useState(null);
+    const [chartViewType, setChartViewType] = useState('weekly'); // 'weekly' or 'monthly'
     const [_loading, setLoading] = useState(true);
+    const [daftarKelas, setDaftarKelas] = useState([]);
+    const [daftarJurusan, setDaftarJurusan] = useState([]);
+    const [siswaFiltered, setSiswaFiltered] = useState([]);
     
     // Search & Detail Book States
     const [searchQuery, setSearchQuery] = useState('');
@@ -46,10 +52,7 @@ export default function Dashboard() {
     // Search & Filter Siswa States
     const [searchSiswa, setSearchSiswa] = useState('');
     const [filterKelas, setFilterKelas] = useState('');
-    const [filterJurusan, setFilterJurusan] = useState('');
-    const [daftarKelas, setDaftarKelas] = useState([]);
-    const [daftarJurusan, setDaftarJurusan] = useState([]);
-    const [siswaFiltered, setSiswaFiltered] = useState([]);
+    const [filterJurusan, setFilterJurusan] = useState([]);
     
     // Student Profile Modal States
     const [selectedStudent, setSelectedStudent] = useState(null);
@@ -62,10 +65,13 @@ export default function Dashboard() {
     const [openLibLoading, setOpenLibLoading] = useState(false);
     
     // Form States
-    const [newBook, setNewBook] = useState({ judul: '', penulis: '', penerbit: '', kategori: 'Fiksi', tahun_terbit: '', stok: '' });
+    const [newBook, setNewBook] = useState({ judul: '', penulis: '', penerbit: '', kategori: 'Fiksi', tahun_terbit: '', stok: '', isbn: '' });
     
     // Late Fees States
     const [lateFees, setLateFees] = useState([]);
+    
+    // Selected Transactions for PDF Report States
+    const [selectedTransactions, setSelectedTransactions] = useState([]);
 
     // Stock Management States
     const [selectedBookForStock, setSelectedBookForStock] = useState(null);
@@ -77,18 +83,12 @@ export default function Dashboard() {
 
     const navigate = useNavigate();
 
-    // Load user dari localStorage saat component mount
+    // useEffect untuk navigate jika user tidak ada atau bukan admin
     useEffect(() => {
-        const userStr = localStorage.getItem('user');
-        console.log('Raw localStorage user string:', userStr);
-        if (userStr) {
-            const userData = JSON.parse(userStr);
-            console.log('Parsed user object:', userData);
-            setUser(userData);
-        } else {
+        if (!user) {
             navigate('/login');
         }
-    }, [navigate]);
+    }, [user, navigate]);
 
     const fetchData = useCallback(async () => {
         try {
@@ -211,12 +211,12 @@ export default function Dashboard() {
         return () => { mounted = false; };
     }, [user]);
 
-    // Update siswaFiltered whenever students data changes
+    // Update siswaFiltered setiap students
     useEffect(() => {
         setSiswaFiltered(students);
     }, [students]);
 
-    // Extract available years from books
+    // Extract tahun yang tersedia dari books
     useEffect(() => {
         if (books.length > 0) {
             const tahunUnique = [...new Set(books.map(b => b.tahun_terbit).filter(t => t))].sort().reverse();
@@ -226,7 +226,7 @@ export default function Dashboard() {
 
 
 
-    // --- LOGIC BUKU ---
+    // LOGIC BUKU 
     const pinjamBuku = async (bookId) => {
         try {
             await axios.post('http://localhost:5000/borrow', { user_id: user.id, book_id: bookId });
@@ -235,7 +235,7 @@ export default function Dashboard() {
         } catch (err) { alert(err.response?.data?.message); }
     };
 
-    // Konfirmasi pengembalian buku (admin)
+    // buku (admin)
     const tambahBuku = async (e) => {
         e.preventDefault();
         try {
@@ -251,12 +251,13 @@ export default function Dashboard() {
                 penerbit: newBook.penerbit.trim() || null,
                 kategori: newBook.kategori.trim() || 'Fiksi',
                 tahun_terbit: newBook.tahun_terbit || null,
-                stok: parseInt(newBook.stok)
+                stok: parseInt(newBook.stok),
+                isbn: newBook.isbn || null
             };
 
             await axios.post('http://localhost:5000/books', bookData);
             alert('Buku berhasil ditambahkan!'); 
-            setNewBook({ judul: '', penulis: '', penerbit: '', kategori: 'Fiksi', tahun_terbit: '', stok: '' }); 
+            setNewBook({ judul: '', penulis: '', penerbit: '', kategori: 'Fiksi', tahun_terbit: '', stok: '', isbn: '' }); 
             fetchData();
         } catch (err) { 
             console.error('Error adding book:', err);
@@ -372,7 +373,8 @@ export default function Dashboard() {
                 kategori: editBookData.kategori || null,
                 tahun_terbit: editBookData.tahun_terbit || null,
                 stok: selectedBookForStock?.stok,  // CRITICAL: Don't lose stok value!
-                cover_url: editBookData.cover_url || null  // CRITICAL: Don't lose cover photo!
+                cover_url: editBookData.cover_url || null,  // CRITICAL: Don't lose cover photo!
+                isbn: editBookData.isbn || null
             });
 
             console.log('✅ Buku data updated');
@@ -756,6 +758,280 @@ export default function Dashboard() {
             console.error('Membership card download error:', err);
             alert('❌ Gagal mengunduh kartu anggota: ' + (err.message || 'Terjadi kesalahan'));
         }
+    };
+
+    // Handle Transaction Selection for PDF
+    const toggleTransactionSelection = (transactionId) => {
+        setSelectedTransactions(prev => 
+            prev.includes(transactionId) 
+                ? prev.filter(id => id !== transactionId)
+                : [...prev, transactionId]
+        );
+    };
+
+    // Select All/Deselect All Transactions
+    const toggleSelectAllTransactions = () => {
+        if (selectedTransactions.length === transactions.length) {
+            setSelectedTransactions([]);
+        } else {
+            setSelectedTransactions(transactions.map(t => t.id));
+        }
+    };
+
+    // Generate Custom PDF for Selected Transactions
+    const generateCustomTransactionPDF = async () => {
+        if (selectedTransactions.length === 0) {
+            alert('❌ Pilih minimal 1 transaksi untuk generate PDF');
+            return;
+        }
+
+        try {
+            const response = await axios.post('http://localhost:5000/transactions/generate-pdf', 
+                { transactionIds: selectedTransactions },
+                { responseType: 'blob' }
+            );
+            
+            // Create blob link to download
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            
+            // Extract filename dari Content-Disposition header
+            const contentDisposition = response.headers['content-disposition'];
+            let filename = `Laporan_Transaksi_Riwayat_${new Date().toLocaleDateString('id-ID')}.pdf`;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                if (filenameMatch) filename = filenameMatch[1];
+            }
+            
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            
+            alert(`✅ PDF berhasil diunduh! (${selectedTransactions.length} transaksi)`);
+            setSelectedTransactions([]);
+        } catch (err) {
+            console.error('Custom PDF generation error:', err);
+            alert('❌ Gagal generate PDF: ' + (err.message || 'Terjadi kesalahan'));
+        }
+    };
+
+    // Generate HTML Content for Selected Transactions (for printing)
+    const generateSelectedTransactionsHTML = () => {
+        const selectedTrans = transactions.filter(t => selectedTransactions.includes(t.id));
+        
+        if (selectedTrans.length === 0) {
+            return '<p>Tidak ada transaksi terpilih.</p>';
+        }
+
+        const totalCount = selectedTrans.length;
+        const completed = selectedTrans.filter(t => t.status === 'kembali').length;
+        const ongoing = selectedTrans.filter(t => t.status === 'dipinjam').length;
+        const totalFines = selectedTrans.reduce((sum, t) => sum + (t.denda || 0), 0);
+
+        let tableRows = selectedTrans.map((t, idx) => `
+            <tr>
+                <td style="border: 1px solid #ddd; padding: 10px; text-align: center;">${idx + 1}</td>
+                <td style="border: 1px solid #ddd; padding: 10px;">${t.nama_lengkap}</td>
+                <td style="border: 1px solid #ddd; padding: 10px;">${t.judul}</td>
+                <td style="border: 1px solid #ddd; padding: 10px;">${new Date(t.tanggal_pinjam).toLocaleDateString('id-ID')}</td>
+                <td style="border: 1px solid #ddd; padding: 10px;">${t.tanggal_kembali ? new Date(t.tanggal_kembali).toLocaleDateString('id-ID') : '-'}</td>
+                <td style="border: 1px solid #ddd; padding: 10px;">${t.status === 'dipinjam' ? '📤 Dipinjam' : t.status === 'kembali' ? '📥 Dikembalikan' : '⏳ ' + t.status}</td>
+                <td style="border: 1px solid #ddd; padding: 10px; text-align: right;">${t.denda ? 'Rp ' + t.denda.toLocaleString('id-ID') : '-'}</td>
+            </tr>
+        `).join('');
+
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html lang="id-ID">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Laporan Riwayat Transaksi</title>
+                <style>
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
+                    body {
+                        font-family: Arial, sans-serif;
+                        padding: 20px;
+                        line-height: 1.6;
+                    }
+                    .header {
+                        text-align: center;
+                        margin-bottom: 30px;
+                        border-bottom: 2px solid #333;
+                        padding-bottom: 15px;
+                    }
+                    .header h1 {
+                        font-size: 20px;
+                        margin-bottom: 5px;
+                    }
+                    .header p {
+                        margin: 3px 0;
+                        font-size: 12px;
+                        color: #666;
+                    }
+                    .info-section {
+                        margin-bottom: 20px;
+                    }
+                    .info-section h3 {
+                        font-size: 13px;
+                        font-weight: bold;
+                        margin-bottom: 10px;
+                        border-bottom: 1px solid #999;
+                        padding-bottom: 5px;
+                    }
+                    .info-row {
+                        display: grid;
+                        grid-template-columns: 200px 1fr;
+                        font-size: 12px;
+                        margin-bottom: 5px;
+                    }
+                    .info-label {
+                        font-weight: bold;
+                    }
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 15px 0;
+                        font-size: 12px;
+                    }
+                    table th {
+                        background-color: #f0f0f0;
+                        border: 1px solid #ddd;
+                        padding: 10px;
+                        text-align: left;
+                        font-weight: bold;
+                    }
+                    .summary {
+                        background-color: #f9f9f9;
+                        border: 1px solid #ddd;
+                        padding: 15px;
+                        margin: 20px 0;
+                        border-radius: 5px;
+                    }
+                    .summary-row {
+                        display: grid;
+                        grid-template-columns: 200px 1fr;
+                        margin-bottom: 8px;
+                        font-size: 12px;
+                    }
+                    .footer {
+                        margin-top: 40px;
+                        text-align: center;
+                        font-size: 11px;
+                        border-top: 2px solid #333;
+                        padding-top: 15px;
+                    }
+                    .signature-line {
+                        margin-top: 50px;
+                        text-align: center;
+                    }
+                    @media print {
+                        body {
+                            margin: 0;
+                            padding: 10px;
+                        }
+                        .no-print {
+                            display: none;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>LAPORAN RIWAYAT TRANSAKSI PEMINJAMAN BUKU</h1>
+                    <p>Sistem Informasi Perpustakaan</p>
+                </div>
+
+                <div class="info-section">
+                    <h3>Informasi Laporan</h3>
+                    <div class="info-row">
+                        <span class="info-label">Tanggal Cetak:</span>
+                        <span>${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Waktu Cetak:</span>
+                        <span>${new Date().toLocaleTimeString('id-ID')}</span>
+                    </div>
+                </div>
+
+                <div class="summary">
+                    <div class="summary-row">
+                        <span class="info-label">Total Transaksi Terpilih:</span>
+                        <span><strong>${totalCount}</strong></span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="info-label">Sudah Dikembalikan:</span>
+                        <span><strong>${completed}</strong></span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="info-label">Sedang Dipinjam:</span>
+                        <span><strong>${ongoing}</strong></span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="info-label">Total Denda:</span>
+                        <span><strong>Rp ${totalFines.toLocaleString('id-ID')}</strong></span>
+                    </div>
+                </div>
+
+                <div class="info-section">
+                    <h3>Daftar Transaksi Terpilih</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;">No</th>
+                                <th style="width: 150px;">Peminjam</th>
+                                <th>Buku</th>
+                                <th style="width: 100px;">Tgl Pinjam</th>
+                                <th style="width: 100px;">Tgl Kembali</th>
+                                <th style="width: 100px;">Status</th>
+                                <th style="width: 120px;">Denda</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="footer">
+                    <div class="signature-line">
+                        <p style="margin-bottom: 50px;">_____________________________</p>
+                        <p>Kepala Perpustakaan</p>
+                    </div>
+                    <p style="margin-top: 20px; font-size: 10px; color: #999;">
+                        Dokumen ini dibuat oleh sistem dan bersifat sah. Generated: ${new Date().toLocaleString('id-ID')}
+                    </p>
+                </div>
+            </body>
+            </html>
+        `;
+
+        return htmlContent;
+    };
+
+    // Print Selected Transactions
+    const printSelectedTransactions = () => {
+        if (selectedTransactions.length === 0) {
+            alert('❌ Pilih minimal 1 transaksi untuk cetak');
+            return;
+        }
+
+        const htmlContent = generateSelectedTransactionsHTML();
+        const printWindow = window.open('', '', 'width=1000,height=700');
+        
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+        
+        setTimeout(() => {
+            printWindow.print();
+        }, 250);
     };
 
     const logout = () => { 
@@ -1150,6 +1426,17 @@ export default function Dashboard() {
                                         />
                                     </div>
                                     <div className="col-md-6">
+                                        <label htmlFor="isbnBuku" className="form-label">ISBN</label>
+                                        <input 
+                                            id="isbnBuku"
+                                            name="isbnBuku"
+                                            className="form-control" 
+                                            placeholder="e.g., 9780451524935"
+                                            value={newBook.isbn || ''} 
+                                            onChange={e => setNewBook({...newBook, isbn: e.target.value})} 
+                                        />
+                                    </div>
+                                    <div className="col-md-6">
                                         <label htmlFor="kategoriBuku" className="form-label">Kategori</label>
                                         <select 
                                             id="kategoriBuku"
@@ -1291,6 +1578,7 @@ export default function Dashboard() {
                                                     <th>Judul</th>
                                                     <th>Penulis</th>
                                                     <th>Penerbit</th>
+                                                    <th>ISBN</th>
                                                     <th>Kategori</th>
                                                     <th>Tahun</th>
                                                     <th>Stok</th>
@@ -1303,6 +1591,7 @@ export default function Dashboard() {
                                                         <td><strong>{book.judul}</strong></td>
                                                         <td>{book.penulis}</td>
                                                         <td>{book.penerbit || '-'}</td>
+                                                        <td><code>{book.isbn || '-'}</code></td>
                                                         <td><span className={`badge ${book.kategori ? 'bg-info' : 'bg-secondary'}`}>{book.kategori || '-'}</span></td>
                                                         <td>{book.tahun_terbit || '-'}</td>
                                                         <td><span className="badge bg-primary">{book.stok}</span></td>
@@ -1526,31 +1815,15 @@ export default function Dashboard() {
                                                             </span>
                                                         </td>
                                                         <td>
-                                                            <div className="btn-group" role="group">
-                                                                {t.status === 'dipinjam' && (
-                                                                    <button 
-                                                                        onClick={() => kembalikanBuku(t.id, t.book_id)} 
-                                                                        className="btn btn-sm btn-primary"
-                                                                        title="Terima pengembalian buku"
-                                                                    >
-                                                                        Terima Kembali
-                                                                    </button>
-                                                                )}
+                                                            {t.status === 'dipinjam' && (
                                                                 <button 
-                                                                    onClick={() => {
-                                                                        const link = document.createElement('a');
-                                                                        link.href = `http://localhost:5000/generate-pdf-transaction/${t.user_id}`;
-                                                                        link.download = `Laporan_${t.nama_lengkap.replace(/\s+/g, '_')}.pdf`;
-                                                                        document.body.appendChild(link);
-                                                                        link.click();
-                                                                        document.body.removeChild(link);
-                                                                    }}
-                                                                    className="btn btn-sm btn-outline-primary"
-                                                                    title="Download laporan PDF siswa"
+                                                                    onClick={() => kembalikanBuku(t.id, t.book_id)} 
+                                                                    className="btn btn-sm btn-primary"
+                                                                    title="Terima pengembalian buku"
                                                                 >
-                                                                    📥 PDF
+                                                                    Terima Kembali
                                                                 </button>
-                                                            </div>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 ))
@@ -1691,12 +1964,50 @@ export default function Dashboard() {
                         {/* Riwayat Transaksi - Complete Transaction History */}
                         {activeTab === 'riwayat_transaksi' && (
                             <div className="card-body">
-                                <h5 className="card-title mb-4">📜 Riwayat Transaksi Lengkap</h5>
+                                <div className="d-flex justify-content-between align-items-center mb-4">
+                                    <h5 className="card-title mb-0">📜 Riwayat Transaksi Lengkap</h5>
+                                    <div className="btn-group" role="group">
+                                        {selectedTransactions.length > 0 && (
+                                            <>
+                                                <button 
+                                                    onClick={printSelectedTransactions}
+                                                    className="btn btn-success"
+                                                    title={`Cetak ${selectedTransactions.length} transaksi terpilih`}
+                                                >
+                                                    🖨️ Cetak ({selectedTransactions.length})
+                                                </button>
+                                                <button 
+                                                    onClick={generateCustomTransactionPDF}
+                                                    className="btn btn-primary"
+                                                    title={`Download PDF untuk ${selectedTransactions.length} transaksi`}
+                                                >
+                                                    📥 Download PDF ({selectedTransactions.length})
+                                                </button>
+                                                <button 
+                                                    onClick={() => setSelectedTransactions([])}
+                                                    className="btn btn-outline-secondary"
+                                                    title="Hapus pilihan"
+                                                >
+                                                    ✕ Hapus Pilihan
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
                                 
                                 <div className="table-responsive">
                                     <table className="table table-hover table-striped">
                                         <thead>
                                             <tr>
+                                                <th style={{ width: '40px' }}>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        className="form-check-input"
+                                                        checked={transactions.length > 0 && selectedTransactions.length === transactions.length}
+                                                        onChange={toggleSelectAllTransactions}
+                                                        title="Pilih semua transaksi"
+                                                    />
+                                                </th>
                                                 <th>No</th>
                                                 <th>Siswa</th>
                                                 <th>Buku</th>
@@ -1709,13 +2020,21 @@ export default function Dashboard() {
                                         <tbody>
                                             {transactions.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan="7" className="text-center text-muted py-4">
+                                                    <td colSpan="8" className="text-center text-muted py-4">
                                                         Belum ada riwayat transaksi.
                                                     </td>
                                                 </tr>
                                             ) : (
                                                 transactions.map((t, index) => (
-                                                    <tr key={t.id}>
+                                                    <tr key={t.id} style={{ backgroundColor: selectedTransactions.includes(t.id) ? '#f0f8ff' : 'transparent' }}>
+                                                        <td>
+                                                            <input 
+                                                                type="checkbox" 
+                                                                className="form-check-input"
+                                                                checked={selectedTransactions.includes(t.id)}
+                                                                onChange={() => toggleTransactionSelection(t.id)}
+                                                            />
+                                                        </td>
                                                         <td>{index + 1}</td>
                                                         <td><strong>{t.nama_lengkap}</strong></td>
                                                         <td>{t.judul}</td>
@@ -1792,10 +2111,39 @@ export default function Dashboard() {
                         {/* Grafik & Laporan Tab */}
                         {activeTab === 'grafik' && (
                             <div className="card-body">
-                                <h5 className="card-title mb-4">📊 Grafik & Laporan</h5>
-                                <BooksChart isDark={isDark} />
-                                <StudentsChart isDark={isDark} />
-                                <TransactionsChart isDark={isDark} />
+                                <div className="d-flex justify-content-between align-items-center mb-4">
+                                    <h5 className="card-title mb-0">📊 Grafik & Laporan</h5>
+                                    <div className="btn-group" role="group">
+                                        <button 
+                                            type="button" 
+                                            className={`btn btn-sm ${chartViewType === 'weekly' ? 'btn-primary' : 'btn-outline-primary'}`}
+                                            onClick={() => setChartViewType('weekly')}
+                                        >
+                                            📅 Mingguan
+                                        </button>
+                                        <button 
+                                            type="button" 
+                                            className={`btn btn-sm ${chartViewType === 'monthly' ? 'btn-primary' : 'btn-outline-primary'}`}
+                                            onClick={() => setChartViewType('monthly')}
+                                        >
+                                            📆 Bulanan
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                {chartViewType === 'weekly' ? (
+                                    <>
+                                        <BooksChart isDark={isDark} />
+                                        <StudentsChart isDark={isDark} />
+                                        <TransactionsChart isDark={isDark} />
+                                    </>
+                                ) : (
+                                    <>
+                                        <BooksChartMonthly isDark={isDark} />
+                                        <StudentsChartMonthly isDark={isDark} />
+                                        <TransactionsChartMonthly isDark={isDark} />
+                                    </>
+                                )}
                             </div>
                         )}
 
@@ -2009,6 +2357,35 @@ export default function Dashboard() {
                                             value={editBookData.penerbit}
                                             onChange={(e) => setEditBookData({...editBookData, penerbit: e.target.value})}
                                         />
+                                    </div>
+                                    <div className="col-md-6">
+                                        <label htmlFor="editISBN" className="form-label fw-bold">ISBN</label>
+                                        <div className="input-group">
+                                            <input 
+                                                id="editISBN"
+                                                type="text" 
+                                                className="form-control" 
+                                                placeholder="e.g., 9780451524935"
+                                                value={editBookData.isbn || ''}
+                                                onChange={(e) => setEditBookData({...editBookData, isbn: e.target.value})}
+                                            />
+                                            <button 
+                                                className="btn btn-outline-secondary"
+                                                type="button"
+                                                title="Fetch ISBN dari Open Library"
+                                                onClick={async () => {
+                                                    try {
+                                                        const res = await axios.post(`http://localhost:5000/books/${editBookData.id}/fetch-isbn`);
+                                                        setEditBookData({...editBookData, isbn: res.data.isbn});
+                                                        alert(res.data.message);
+                                                    } catch (err) {
+                                                        alert('Error: ' + (err.response?.data?.message || err.message));
+                                                    }
+                                                }}
+                                            >
+                                                🔍 Fetch
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="col-md-6">
                                         <label htmlFor="editKategori" className="form-label fw-bold">Kategori</label>
@@ -2298,6 +2675,9 @@ export default function Dashboard() {
                                                         </p>
                                                         <p className="card-text small mb-2">
                                                             <strong>Penerbit:</strong> {book.penerbit || '-'}
+                                                        </p>
+                                                        <p className="card-text small mb-2">
+                                                            <strong>ISBN:</strong> <code>{book.isbn || '-'}</code>
                                                         </p>
                                                         <p className="card-text small mb-2">
                                                             <strong>Kategori:</strong> <span className={`badge ${book.kategori ? 'bg-info' : 'bg-secondary'}`}>{book.kategori || '-'}</span>
