@@ -6,7 +6,7 @@ import Profile from './pages/Profile';
 import ForgotPassword from './pages/ForgotPassword';
 import Catalog from './pages/Catalog';
 import './App.css';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useUser, triggerUserUpdate } from './hooks/useUser';
 
 function Navbar({ user, onLogout }) {
@@ -17,6 +17,7 @@ function Navbar({ user, onLogout }) {
   const handleLogout = () => {
     localStorage.removeItem('user');
     triggerUserUpdate(null);
+    setShowDropdown(false);
     onLogout();
     setShowDropdown(false);
     navigate('/catalog');
@@ -26,6 +27,8 @@ function Navbar({ user, onLogout }) {
     setShowDropdown(false);
     navigate('/login');
   };
+
+  const toggleDropdown = () => setShowDropdown(!showDropdown);
 
   return (
     <nav className="navbar navbar-expand-lg sticky-top">
@@ -46,7 +49,7 @@ function Navbar({ user, onLogout }) {
           <div className="dropdown" style={{ position: 'relative' }}>
             <button
               className="btn btn-sm btn-outline-primary"
-              onClick={() => setShowDropdown(!showDropdown)}
+              onClick={toggleDropdown}
             >
               👤 {user ? user.nama_lengkap : 'Profil'}
             </button>
@@ -159,7 +162,6 @@ function ProtectedRoute({ children, user }) {
 
 function AppContent() {
   const user = useUser();
-  const [showDropdown, setShowDropdown] = useState(false);
 
   return (
     <div className="app-wrapper">

@@ -59,14 +59,6 @@ export default function Dashboard() {
     const [showStudentProfile, setShowStudentProfile] = useState(false);
     const [studentBorrowedBooks, setStudentBorrowedBooks] = useState([]);
     
-    // Open Library Search States
-    const [openLibSearchQuery, setOpenLibSearchQuery] = useState('');
-    const [openLibResults, setOpenLibResults] = useState([]);
-    const [openLibLoading, setOpenLibLoading] = useState(false);
-    
-    // Form States
-    const [newBook, setNewBook] = useState({ judul: '', penulis: '', penerbit: '', kategori: 'Fiksi', tahun_terbit: '', stok: '', isbn: '' });
-    
     // Late Fees States
     const [lateFees, setLateFees] = useState([]);
     
@@ -74,14 +66,12 @@ export default function Dashboard() {
     const [selectedTransactions, setSelectedTransactions] = useState([]);
 
     // Stock Management States
-    const [selectedBookForStock, setSelectedBookForStock] = useState(null);
+    const [selectedBookForStock, _setSelectedBookForStock] = useState(null);
     const [stokInput, setStokInput] = useState({ jumlah: '', tipe: 'tambah' });
 
     // Edit Book States
     const [editBookData, setEditBookData] = useState(null);
     const [showEditModal, setShowEditModal] = useState(false);
-
-    const navigate = useNavigate();
 
     // useEffect untuk navigate jika user tidak ada atau bukan admin
     useEffect(() => {
@@ -235,35 +225,7 @@ export default function Dashboard() {
         } catch (err) { alert(err.response?.data?.message); }
     };
 
-    // buku (admin)
-    const tambahBuku = async (e) => {
-        e.preventDefault();
-        try {
-            // Validasi input
-            if (!newBook.judul.trim() || !newBook.penulis.trim() || !newBook.stok) {
-                alert('Judul, Penulis, dan Stok harus diisi!');
-                return;
-            }
 
-            const bookData = {
-                judul: newBook.judul.trim(),
-                penulis: newBook.penulis.trim(),
-                penerbit: newBook.penerbit.trim() || null,
-                kategori: newBook.kategori.trim() || 'Fiksi',
-                tahun_terbit: newBook.tahun_terbit || null,
-                stok: parseInt(newBook.stok),
-                isbn: newBook.isbn || null
-            };
-
-            await axios.post('http://localhost:5000/books', bookData);
-            alert('Buku berhasil ditambahkan!'); 
-            setNewBook({ judul: '', penulis: '', penerbit: '', kategori: 'Fiksi', tahun_terbit: '', stok: '', isbn: '' }); 
-            fetchData();
-        } catch (err) { 
-            console.error('Error adding book:', err);
-            alert('Gagal menambah buku: ' + (err.response?.data?.message || err.message)); 
-        }
-    };
 
     const searchBuku = async (query = searchQuery, kategori = filterKategori, tahun = filterTahun, stok = filterStok) => {
         setSearchQuery(query);
@@ -298,12 +260,7 @@ export default function Dashboard() {
         }
     };
 
-    const hapusBuku = async (id) => {
-        if(confirm('Hapus buku?')) { 
-            await axios.delete(`http://localhost:5000/books/${id}`); 
-            fetchData(); 
-        }
-    };
+
 
     // --- LOGIC TRANSAKSI ---
     const kembalikanBuku = async (transId, bookId) => {
@@ -331,29 +288,6 @@ export default function Dashboard() {
     };
 
     // --- LOGIC EDIT & STOK BUKU ---
-    const openEditModal = (book) => {
-        // Get fresh data from books state to ensure we have latest stock info
-        const freshBook = books.find(b => b.id === book.id) || book;
-        console.log(`\ud83d\udccb Modal dibuka untuk buku ID ${freshBook.id}, Stok saat ini: ${freshBook.stok}`);
-        
-        setEditBookData({
-            id: freshBook.id,
-            judul: freshBook.judul,
-            penulis: freshBook.penulis,
-            penerbit: freshBook.penerbit || '',
-            kategori: freshBook.kategori || '',
-            tahun_terbit: freshBook.tahun_terbit || '',
-            cover_url: freshBook.cover_url || ''
-        });
-        setSelectedBookForStock(freshBook);
-        console.log('RESET stokInput to empty');
-        
-        // Set tipe based on whether stok is null
-        const isStokNull = freshBook.stok === null || freshBook.stok === undefined;
-        setStokInput({ jumlah: '', tipe: isStokNull ? 'set' : 'tambah' });
-        setShowEditModal(true);
-    };
-
     const editBuku = async () => {
         if (!editBookData.judul.trim() || !editBookData.penulis.trim()) {
             alert('Judul dan Penulis harus diisi!');
@@ -425,47 +359,7 @@ export default function Dashboard() {
     };
 
 
-    // --- LOGIC OPEN LIBRARY ---
-    const searchOpenLibrary = async (query) => {
-        setOpenLibSearchQuery(query);
-        if (!query.trim()) {
-            setOpenLibResults([]);
-            return;
-        }
 
-        setOpenLibLoading(true);
-        try {
-            const res = await axios.get(`http://localhost:5000/books/search-openlib?q=${encodeURIComponent(query)}`);
-            setOpenLibResults(res.data);
-        } catch (err) {
-            console.error('Open Library search error:', err);
-            alert('Gagal mencari di Open Library');
-            setOpenLibResults([]);
-        } finally {
-            setOpenLibLoading(false);
-        }
-    };
-
-    const importFromOpenLib = async (book) => {
-        try {
-            const res = await axios.post('http://localhost:5000/books/import-openlib', {
-                title: book.title,
-                author: book.author,
-                publisher: book.publisher,
-                year: book.year,
-                cover_url: book.cover_url
-            });
-            alert(res.data.message);
-            setOpenLibSearchQuery('');
-            setOpenLibResults([]);
-            fetchData();
-        } catch (err) {
-            const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message;
-            const details = err.response?.data?.details || '';
-            console.error('Import error:', { errorMsg, details, fullError: err.response?.data });
-            alert('Gagal import buku: ' + errorMsg + (details ? ` (${details})` : ''));
-        }
-    };
 
     // --- LOGIC SISWA ---
     // Initialize daftar kelas & jurusan dengan nilai hardcoded
@@ -1064,70 +958,171 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Admin Controls */}
-            {user.role === 'admin' && (
-                <div className="mb-4">
-                    <ul className="nav nav-tabs" role="tablist">
-                        <li className="nav-item">
-                            <button 
-                                className={`nav-link ${activeTab === 'daftar_buku' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('daftar_buku')}
-                            >
-                                📚 Daftar Buku
-                            </button>
-                        </li>
-                        <li className="nav-item">
-                            <button 
-                                className={`nav-link ${activeTab === 'students' ? 'active' : ''}`}
-                                onClick={() => {
-                                    setActiveTab('students');
-                                    setSiswaFiltered(students);
-                                }}
-                            >
-                                👨‍🎓 Manajemen Siswa
-                            </button>
-                        </li>
-                        <li className="nav-item">
-                            <button 
-                                className={`nav-link ${activeTab === 'transaksi' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('transaksi')}
-                            >
-                                📋 Transaksi
-                            </button>
-                        </li>
-                        <li className="nav-item">
-                            <button 
-                                className={`nav-link ${activeTab === 'riwayat_transaksi' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('riwayat_transaksi')}
-                            >
-                                📜 Riwayat Transaksi
-                            </button>
-                        </li>
-                        <li className="nav-item">
-                            <button 
-                                className={`nav-link ${activeTab === 'cetak_denda' ? 'active' : ''}`}
-                                onClick={() => {
-                                    setActiveTab('cetak_denda');
-                                    fetchLateFees();
-                                }}
-                            >
-                                🖨️ Cetak Denda
-                            </button>
-                        </li>
-                        <li className="nav-item">
-                            <button 
-                                className={`nav-link ${activeTab === 'grafik' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('grafik')}
-                            >
-                                📊 Grafik & Laporan
-                            </button>
-                        </li>
-                    </ul>
+            {/* Unified Tab Navigation */}
+            <div className="mb-4">
+                <ul className="nav nav-tabs" role="tablist">
+                    {/* Admin Tabs */}
+                    {user.role === 'admin' && (
+                        <>
+                            <li className="nav-item">
+                                <button 
+                                    className={`nav-link ${activeTab === 'daftar_buku' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('daftar_buku')}
+                                >
+                                    📚 Daftar Buku
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button 
+                                    className={`nav-link ${activeTab === 'students' ? 'active' : ''}`}
+                                    onClick={() => {
+                                        setActiveTab('students');
+                                        setSiswaFiltered(students);
+                                    }}
+                                >
+                                    👨‍🎓 Manajemen Siswa
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button 
+                                    className={`nav-link ${activeTab === 'transaksi' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('transaksi')}
+                                >
+                                    📋 Transaksi
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button 
+                                    className={`nav-link ${activeTab === 'riwayat_transaksi' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('riwayat_transaksi')}
+                                >
+                                    📜 Riwayat Transaksi
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button 
+                                    className={`nav-link ${activeTab === 'cetak_denda' ? 'active' : ''}`}
+                                    onClick={() => {
+                                        setActiveTab('cetak_denda');
+                                        fetchLateFees();
+                                    }}
+                                >
+                                    🖨️ Cetak Denda
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button 
+                                    className={`nav-link ${activeTab === 'grafik' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('grafik')}
+                                >
+                                    📊 Grafik & Laporan
+                                </button>
+                            </li>
+                        </>
+                    )}
 
-                    <div className="card border-0 mt-3">
+                    {/* Student Tabs */}
+                    {user.role === 'siswa' && (
+                        <>
+                            <li className="nav-item">
+                                <button 
+                                    className={`nav-link ${activeTabSiswa === 'katalog' ? 'active' : ''}`}
+                                    onClick={() => setActiveTabSiswa('katalog')}
+                                >
+                                    📚 Katalog Buku
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button 
+                                    className={`nav-link ${activeTabSiswa === 'bukusaya' ? 'active' : ''}`}
+                                    onClick={() => setActiveTabSiswa('bukusaya')}
+                                >
+                                    📖 Buku Saya
+                                    <span className="badge bg-warning text-dark ms-2">{myBorrowedBooks.length}</span>
+                                </button>
+                            </li>
+                            <li className="nav-item">
+                                <button 
+                                    className={`nav-link ${activeTabSiswa === 'riwayat' ? 'active' : ''}`}
+                                    onClick={() => setActiveTabSiswa('riwayat')}
+                                >
+                                    📜 Riwayat Peminjaman
+                                    <span className="badge bg-info ms-2">{myBorrowingHistory.length}</span>
+                                </button>
+                            </li>
+                        </>
+                    )}
+                </ul>
+            </div>
+
+            {/* Student Summary Cards */}
+            {user.role === 'siswa' && (
+                <div className="row g-3 mb-4">
+                    <div className="col-md-3">
+                        <div className="card border-0 shadow-sm" style={{backgroundColor: isDark ? '#2d2d2d' : '#e3f2fd', borderLeft: '4px solid #2196F3'}}>
+                            <div className="card-body">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p className="card-text text-muted small mb-2">Sedang Dipinjam</p>
+                                        <h3 className="card-title mb-0">{myBorrowedBooks.length}</h3>
+                                    </div>
+                                    <div style={{fontSize: '2rem'}}>📚</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-md-3">
+                        <div className="card border-0 shadow-sm" style={{backgroundColor: isDark ? '#2d2d2d' : '#f3e5f5', borderLeft: '4px solid #9C27B0'}}>
+                            <div className="card-body">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p className="card-text text-muted small mb-2">Total Transaksi</p>
+                                        <h3 className="card-title mb-0">{myBorrowingHistory.length}</h3>
+                                    </div>
+                                    <div style={{fontSize: '2rem'}}>📊</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-md-3">
+                        <div className="card border-0 shadow-sm" style={{backgroundColor: isDark ? '#2d2d2d' : '#e8f5e9', borderLeft: '4px solid #4CAF50'}}>
+                            <div className="card-body">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p className="card-text text-muted small mb-2">Sudah Dikembalikan</p>
+                                        <h3 className="card-title mb-0">{myBorrowingHistory.filter(h => h.status === 'kembali').length}</h3>
+                                    </div>
+                                    <div style={{fontSize: '2rem'}}>✅</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-md-3">
+                        <div className="card border-0 shadow-sm" style={{backgroundColor: isDark ? '#2d2d2d' : '#ffebee', borderLeft: '4px solid #f44336'}}>
+                            <div className="card-body">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p className="card-text text-muted small mb-2">Total Denda</p>
+                                        <h3 className="card-title mb-0">Rp {myBorrowingHistory.reduce((sum, h) => sum + (h.denda || 0), 0).toLocaleString('id-ID')}</h3>
+                                    </div>
+                                    <div style={{fontSize: '2rem'}}>⚠️</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Content Card */}
+            <div className="card border-0 mt-3">
+                {user.role === 'admin' && (
+                    <div className="card-body">
                         {/* Daftar Buku - Tambah Buku */}
                         {activeTab === 'daftar_buku' && (
-                            <div className="card-body">
+                            <>
                                 <h5 className="card-title mb-4">📚 Daftar Buku</h5>
                                 
                                 {/* Search Bar dan Filter */}
@@ -1299,326 +1294,8 @@ export default function Dashboard() {
                                         ))}
                                     </div>
                                 )}
-                            </div>
+                            </>
                         )}
-
-                        {/* Daftar Buku - Search from Open Library Section */}
-                        {activeTab === 'daftar_buku' && (
-                            <div className="card-body">
-                                {/* Open Library Search Section */}
-                                <div className="mb-5 pb-4" style={{borderBottom: '3px solid #dee2e6'}}>
-                                    <h5 className="card-title mb-3">📖 Cari Buku dari Open Library</h5>
-                                    <p className="text-muted small">Cari dan import buku dari koleksi Open Library secara langsung</p>
-                                    
-                                    <div className="row g-3 mb-4">
-                                        <div className="col-md-9">
-                                            <input 
-                                                id="openLibSearch"
-                                                name="openLibSearch"
-                                                type="text" 
-                                                className="form-control form-control-lg" 
-                                                placeholder="Cari judul buku... (contoh: The Lord of the Rings)" 
-                                                value={openLibSearchQuery}
-                                                onChange={(e) => searchOpenLibrary(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="col-md-3">
-                                            <button 
-                                                onClick={() => searchOpenLibrary(openLibSearchQuery)} 
-                                                className="btn btn-primary btn-lg w-100"
-                                                disabled={!openLibSearchQuery.trim() || openLibLoading}
-                                            >
-                                                {openLibLoading ? '🔄 Searching...' : '🔍 Search'}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Open Library Results */}
-                                    {openLibResults.length > 0 && (
-                                        <div className="alert alert-info mb-4">
-                                            <strong>Menemukan {openLibResults.length} buku</strong> - Klik tombol "Import" untuk menambahkan ke database
-                                        </div>
-                                    )}
-
-                                    {openLibResults.length > 0 && (
-                                        <div className="table-responsive mb-5">
-                                            <table className="table table-hover">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Cover</th>
-                                                        <th>Judul</th>
-                                                        <th>Penulis</th>
-                                                        <th>Penerbit</th>
-                                                        <th>Tahun</th>
-                                                        <th>Aksi</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {openLibResults.map((book, idx) => (
-                                                        <tr key={idx}>
-                                                            <td>
-                                                                {book.cover_url ? (
-                                                                    <img 
-                                                                        src={book.cover_url} 
-                                                                        alt={book.title}
-                                                                        style={{height: '50px', objectFit: 'contain', borderRadius: '4px'}}
-                                                                        onError={(e) => { e.target.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2250%22%3E%3Crect fill=%22%23ccc%22 width=%2250%22 height=%2250%22/%3E%3C/svg%3E'; }}
-                                                                    />
-                                                                ) : (
-                                                                    <div style={{width: '50px', height: '50px', backgroundColor: '#ccc', borderRadius: '4px'}}></div>
-                                                                )}
-                                                            </td>
-                                                            <td><strong>{book.title}</strong></td>
-                                                            <td>{book.author || '-'}</td>
-                                                            <td>{book.publisher || '-'}</td>
-                                                            <td>{book.year || '-'}</td>
-                                                            <td>
-                                                                <button 
-                                                                    onClick={() => importFromOpenLib(book)} 
-                                                                    className="btn btn-sm btn-success"
-                                                                >
-                                                                    ✅ Import
-                                                                </button>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <h5 className="card-title mb-3">Tambah Buku Baru</h5>
-                                <form onSubmit={tambahBuku} className="row g-3 mb-5 pb-3" style={{borderBottom: '2px solid #dee2e6'}}>
-                                    <div className="col-md-6">
-                                        <label htmlFor="judulBuku" className="form-label">Judul Buku</label>
-                                        <input 
-                                            id="judulBuku"
-                                            name="judulBuku"
-                                            className="form-control" 
-                                            placeholder="Masukkan judul buku"
-                                            value={newBook.judul} 
-                                            onChange={e => setNewBook({...newBook, judul: e.target.value})} 
-                                            required 
-                                        />
-                                    </div>
-                                    <div className="col-md-6">
-                                        <label htmlFor="penulisBuku" className="form-label">Penulis</label>
-                                        <input 
-                                            id="penulisBuku"
-                                            name="penulisBuku"
-                                            className="form-control" 
-                                            placeholder="Masukkan nama penulis"
-                                            value={newBook.penulis} 
-                                            onChange={e => setNewBook({...newBook, penulis: e.target.value})} 
-                                            required 
-                                        />
-                                    </div>
-                                    <div className="col-md-6">
-                                        <label htmlFor="penerbitBuku" className="form-label">Penerbit</label>
-                                        <input 
-                                            id="penerbitBuku"
-                                            name="penerbitBuku"
-                                            className="form-control" 
-                                            placeholder="Masukkan nama penerbit"
-                                            value={newBook.penerbit} 
-                                            onChange={e => setNewBook({...newBook, penerbit: e.target.value})} 
-                                        />
-                                    </div>
-                                    <div className="col-md-6">
-                                        <label htmlFor="isbnBuku" className="form-label">ISBN</label>
-                                        <input 
-                                            id="isbnBuku"
-                                            name="isbnBuku"
-                                            className="form-control" 
-                                            placeholder="e.g., 9780451524935"
-                                            value={newBook.isbn || ''} 
-                                            onChange={e => setNewBook({...newBook, isbn: e.target.value})} 
-                                        />
-                                    </div>
-                                    <div className="col-md-6">
-                                        <label htmlFor="kategoriBuku" className="form-label">Kategori</label>
-                                        <select 
-                                            id="kategoriBuku"
-                                            name="kategoriBuku"
-                                            className="form-select" 
-                                            value={newBook.kategori} 
-                                            onChange={e => setNewBook({...newBook, kategori: e.target.value})}
-                                            required
-                                        >
-                                            <option value="">-- Pilih Kategori --</option>
-                                            {DAFTAR_KATEGORI.map(kat => (
-                                                <option key={kat} value={kat}>{kat}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div className="col-md-3">
-                                        <label htmlFor="tahunTerbit" className="form-label">Tahun Terbit</label>
-                                        <input 
-                                            id="tahunTerbit"
-                                            name="tahunTerbit"
-                                            type="number" 
-                                            className="form-control" 
-                                            placeholder="Tahun"
-                                            value={newBook.tahun_terbit} 
-                                            onChange={e => setNewBook({...newBook, tahun_terbit: e.target.value})} 
-                                        />
-                                    </div>
-                                    <div className="col-md-3">
-                                        <label htmlFor="stokBuku" className="form-label">Stok</label>
-                                        <input 
-                                            id="stokBuku"
-                                            name="stokBuku"
-                                            type="number" 
-                                            className="form-control" 
-                                            placeholder="Jumlah stok"
-                                            value={newBook.stok} 
-                                            onChange={e => setNewBook({...newBook, stok: e.target.value})} 
-                                            required 
-                                        />
-                                    </div>
-                                    <div className="col-12">
-                                        <button type="submit" className="btn btn-success">✅ Tambah Buku</button>
-                                    </div>
-                                </form>
-
-                                <h5 className="card-title mb-4">📋 Daftar Buku di Sistema</h5>
-
-                                {/* Search Bar dan Filter */}
-                                <div className="row g-3 mb-4 pb-3" style={{borderBottom: '2px solid #dee2e6'}}>
-                                    <div className="col-md-4">
-                                        <label className="form-label fw-bold">🔍 Cari Buku</label>
-                                        <input 
-                                            id="searchBooksSistema"
-                                            name="searchBooksSistema"
-                                            type="text" 
-                                            className="form-control form-control-lg" 
-                                            placeholder="Judul, penulis, penerbit..." 
-                                            value={searchQuery}
-                                            onChange={(e) => searchBuku(e.target.value)}
-                                        />
-                                    </div>
-
-                                    <div className="col-md-2">
-                                        <label className="form-label fw-bold">📂 Kategori</label>
-                                        <select 
-                                            className="form-select form-select-lg"
-                                            value={filterKategori}
-                                            onChange={(e) => {
-                                                setFilterKategori(e.target.value);
-                                                searchBuku(searchQuery, e.target.value, filterTahun, filterStok);
-                                            }}
-                                        >
-                                            <option value="semua">Semua</option>
-                                            {DAFTAR_KATEGORI.map(kat => (
-                                                <option key={kat} value={kat}>{kat}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div className="col-md-2">
-                                        <label className="form-label fw-bold">📅 Tahun</label>
-                                        <select 
-                                            className="form-select form-select-lg"
-                                            value={filterTahun}
-                                            onChange={(e) => {
-                                                setFilterTahun(e.target.value);
-                                                searchBuku(searchQuery, filterKategori, e.target.value, filterStok);
-                                            }}
-                                        >
-                                            <option value="semua">Semua Tahun</option>
-                                            {tahunTersedia.map(tahun => (
-                                                <option key={tahun} value={tahun}>{tahun}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div className="col-md-2">
-                                        <label className="form-label fw-bold">📦 Stok</label>
-                                        <select 
-                                            className="form-select form-select-lg"
-                                            value={filterStok}
-                                            onChange={(e) => {
-                                                setFilterStok(e.target.value);
-                                                searchBuku(searchQuery, filterKategori, filterTahun, e.target.value);
-                                            }}
-                                        >
-                                            <option value="semua">Semua Status</option>
-                                            <option value="tersedia">✅ Tersedia</option>
-                                            <option value="tidak_tersedia">❌ Tidak Tersedia</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="col-md-2 d-flex align-items-end">
-                                        <button 
-                                            className="btn btn-outline-secondary w-100" 
-                                            onClick={() => {
-                                                setSearchQuery('');
-                                                setFilterKategori('semua');
-                                                setFilterTahun('semua');
-                                                setFilterStok('semua');
-                                                searchBuku('', 'semua', 'semua', 'semua');
-                                            }}
-                                        >
-                                            🔄 Reset
-                                        </button>
-                                    </div>
-                                </div>
-                                
-                                {/* Daftar Buku dalam Tabel */}
-                                {books.length === 0 ? (
-                                    <div className="alert alert-info">
-                                        Tidak ada buku yang tersedia.
-                                    </div>
-                                ) : (
-                                    <div className="table-responsive">
-                                        <table className="table table-hover">
-                                            <thead>
-                                                <tr>
-                                                    <th>Judul</th>
-                                                    <th>Penulis</th>
-                                                    <th>Penerbit</th>
-                                                    <th>ISBN</th>
-                                                    <th>Kategori</th>
-                                                    <th>Tahun</th>
-                                                    <th>Stok</th>
-                                                    <th>Aksi</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {books.map(book => (
-                                                    <tr key={book.id}>
-                                                        <td><strong>{book.judul}</strong></td>
-                                                        <td>{book.penulis}</td>
-                                                        <td>{book.penerbit || '-'}</td>
-                                                        <td><code>{book.isbn || '-'}</code></td>
-                                                        <td><span className={`badge ${book.kategori ? 'bg-info' : 'bg-secondary'}`}>{book.kategori || '-'}</span></td>
-                                                        <td>{book.tahun_terbit || '-'}</td>
-                                                        <td><span className="badge bg-primary">{book.stok}</span></td>
-                                                        <td>
-                                                            <button 
-                                                                onClick={() => openEditModal(book)} 
-                                                                className="btn btn-sm btn-primary me-2"
-                                                                title="Edit buku dan kelola stok"
-                                                            >
-                                                                ✏️ Edit
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => hapusBuku(book.id)} 
-                                                                className="btn btn-sm btn-danger"
-                                                            >
-                                                                🗑️ Hapus
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
                         {/* Manajemen Siswa */}
                         {activeTab === 'students' && (
                             <div className="card-body">
@@ -2146,11 +1823,334 @@ export default function Dashboard() {
                                 )}
                             </div>
                         )}
-
-
                     </div>
-                </div>
-            )}
+                )}
+
+                {user.role === 'siswa' && (
+                    <div className="card-body">
+                        {/* Student: Katalog Buku Tab */}
+                        {activeTabSiswa === 'katalog' && (
+                            <>
+                                <h5 className="card-title mb-4">📚 Katalog Buku</h5>
+                                
+                                {/* Search Bar dan Filter */}
+                                <div className="row g-3 mb-4 pb-3" style={{borderBottom: '2px solid #dee2e6'}}>
+                                    <div className="col-md-4">
+                                        <label className="form-label fw-bold">🔍 Cari Buku</label>
+                                        <input 
+                                            id="searchBooksStudent"
+                                            name="searchBooksStudent"
+                                            type="text" 
+                                            className="form-control form-control-lg" 
+                                            placeholder="Judul, penulis, penerbit..." 
+                                            value={searchQuery}
+                                            onChange={(e) => searchBuku(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📂 Kategori</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterKategori}
+                                            onChange={(e) => {
+                                                setFilterKategori(e.target.value);
+                                                searchBuku(searchQuery, e.target.value, filterTahun, filterStok);
+                                            }}
+                                        >
+                                            <option value="semua">Semua</option>
+                                            {DAFTAR_KATEGORI.map(kat => (
+                                                <option key={kat} value={kat}>{kat}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📅 Tahun</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterTahun}
+                                            onChange={(e) => {
+                                                setFilterTahun(e.target.value);
+                                                searchBuku(searchQuery, filterKategori, e.target.value, filterStok);
+                                            }}
+                                        >
+                                            <option value="semua">Semua Tahun</option>
+                                            {tahunTersedia.map(tahun => (
+                                                <option key={tahun} value={tahun}>{tahun}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2">
+                                        <label className="form-label fw-bold">📦 Stok</label>
+                                        <select 
+                                            className="form-select form-select-lg"
+                                            value={filterStok}
+                                            onChange={(e) => {
+                                                setFilterStok(e.target.value);
+                                                searchBuku(searchQuery, filterKategori, filterTahun, e.target.value);
+                                            }}
+                                        >
+                                            <option value="semua">Semua Status</option>
+                                            <option value="tersedia">✅ Tersedia</option>
+                                            <option value="tidak_tersedia">❌ Tidak Tersedia</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="col-md-2 d-flex align-items-end">
+                                        <button 
+                                            className="btn btn-outline-secondary w-100" 
+                                            onClick={() => {
+                                                setSearchQuery('');
+                                                setFilterKategori('semua');
+                                                setFilterTahun('semua');
+                                                setFilterStok('semua');
+                                                searchBuku('', 'semua', 'semua', 'semua');
+                                            }}
+                                        >
+                                            🔄 Reset
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {books.length === 0 ? (
+                                    <div className="alert alert-info">
+                                        ℹ️ Tidak ada buku yang tersedia saat ini.
+                                    </div>
+                                ) : (
+                                    <div className="row g-4">
+                                        {books.map(book => (
+                                            <div className="col-md-6 col-lg-4" key={book.id}>
+                                                <div className="card h-100 shadow-sm" style={{border: `1px solid ${isDark ? '#444444' : '#dee2e6'}`}}>
+                                                    <div style={{
+                                                        width: '100%',
+                                                        height: '220px',
+                                                        backgroundColor: '#f0f0f0',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        overflow: 'hidden',
+                                                        borderBottom: `1px solid ${isDark ? '#444444' : '#dee2e6'}`
+                                                    }}>
+                                                        {book.cover_url ? (
+                                                            <img 
+                                                                src={book.cover_url} 
+                                                                alt={book.judul}
+                                                                style={{
+                                                                    width: '100%',
+                                                                    height: '100%',
+                                                                    objectFit: 'contain',
+                                                                    padding: '8px'
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <div style={{
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                backgroundColor: '#e9ecef'
+                                                            }}>
+                                                                <span style={{fontSize: '40px', marginBottom: '8px'}}>📖</span>
+                                                                <span style={{fontSize: '12px', color: '#999'}}>No Cover</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    <div className="card-body">
+                                                        <h5 className="card-title">{book.judul}</h5>
+                                                        <p className="card-text small text-muted mb-2">
+                                                            <strong>Penulis:</strong> {book.penulis}
+                                                        </p>
+                                                        <p className="card-text small mb-2">
+                                                            <strong>Penerbit:</strong> {book.penerbit || '-'}
+                                                        </p>
+                                                        <p className="card-text small mb-2">
+                                                            <strong>ISBN:</strong> <code>{book.isbn || '-'}</code>
+                                                        </p>
+                                                        <p className="card-text small mb-2">
+                                                            <strong>Kategori:</strong> <span className={`badge ${book.kategori ? 'bg-info' : 'bg-secondary'}`}>{book.kategori || '-'}</span>
+                                                        </p>
+                                                        <p className="card-text small mb-3">
+                                                            <strong>Tahun:</strong> {book.tahun_terbit || '-'}
+                                                        </p>
+                                                        <div className="d-flex justify-content-between align-items-center">
+                                                            <span className="badge bg-primary">{book.stok} stok</span>
+                                                            <button 
+                                                                onClick={() => viewBookProfile(book.id)} 
+                                                                className="btn btn-sm btn-outline-primary"
+                                                            >
+                                                                👁️ Detail
+                                                            </button>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => pinjamBuku(book.id)} 
+                                                            className="btn btn-primary btn-sm w-100 mt-2" 
+                                                            disabled={book.stok < 1}
+                                                        >
+                                                            {book.stok < 1 ? '❌ Habis' : '📤 Pinjam'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+
+                        {/* Student: Buku Saya Tab */}
+                        {activeTabSiswa === 'bukusaya' && (
+                            <>
+                                <h5 className="card-title mb-4">📖 Buku Yang Saya Pinjam</h5>
+                                
+                                {myBorrowedBooks.length === 0 ? (
+                                    <div className="alert alert-info">
+                                        ℹ️ Anda belum meminjam buku. Silakan pilih buku dari tab Katalog di atas.
+                                    </div>
+                                ) : (
+                                    <div className="row g-4">
+                                        {myBorrowedBooks.map(book => (
+                                            <div className="col-md-6 col-lg-4" key={book.id}>
+                                                <div className="card h-100 shadow-sm" style={{border: `1px solid ${isDark ? '#444444' : '#dee2e6'}`, borderLeft: '4px solid #ff9800'}}>
+                                                    <div style={{
+                                                        width: '100%',
+                                                        height: '220px',
+                                                        backgroundColor: '#f0f0f0',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        overflow: 'hidden',
+                                                        borderBottom: `1px solid ${isDark ? '#444444' : '#dee2e6'}`
+                                                    }}>
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            width: '100%',
+                                                            height: '100%',
+                                                            backgroundColor: '#e9ecef'
+                                                        }}>
+                                                            <span style={{fontSize: '40px', marginBottom: '8px'}}>📚</span>
+                                                            <span style={{fontSize: '12px', color: '#999'}}>{book.status}</span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="card-body">
+                                                        <h5 className="card-title">{book.judul}</h5>
+                                                        <p className="card-text small text-muted mb-2">
+                                                            <strong>Penulis:</strong> {book.penulis}
+                                                        </p>
+                                                        <p className="card-text small mb-3">
+                                                            <strong>Tanggal Pinjam:</strong> {new Date(book.tanggal_pinjam).toLocaleDateString('id-ID')}
+                                                        </p>
+                                                        <div>
+                                                            <span className="badge bg-warning text-dark w-100" style={{padding: '8px'}}>
+                                                                📤 Sedang Dipinjam
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+
+                        {/* Student: Riwayat Peminjaman Tab */}
+                        {activeTabSiswa === 'riwayat' && (
+                            <>
+                                <div className="d-flex justify-content-between align-items-center mb-4">
+                                    <h5 className="card-title mb-0">📜 Riwayat Peminjaman</h5>
+                                    <div>
+                                        <button 
+                                            className="btn btn-outline-primary me-2"
+                                            onClick={() => {
+                                                const link = document.createElement('a');
+                                                link.href = `http://localhost:5000/generate-pdf-transaction/${user.id}`;
+                                                link.download = `Laporan_Transaksi_${user.nama_lengkap.replace(/\s+/g, '_')}.pdf`;
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                            }}
+                                        >
+                                            📥 Download PDF
+                                        </button>
+                                        <button 
+                                            className="btn btn-outline-secondary"
+                                            onClick={() => {
+                                                window.open(`http://localhost:5000/generate-pdf-transaction/${user.id}`, '_blank');
+                                            }}
+                                        >
+                                            🖨️ Cetak
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                {myBorrowingHistory.length === 0 ? (
+                                    <div className="alert alert-info">
+                                        ℹ️ Belum ada riwayat peminjaman.
+                                    </div>
+                                ) : (
+                                    <div className="table-responsive">
+                                        <table className="table table-hover">
+                                            <thead style={{backgroundColor: isDark ? '#333333' : '#f8f9fa'}}>
+                                                <tr>
+                                                    <th>No</th>
+                                                    <th>Judul Buku</th>
+                                                    <th>Penulis</th>
+                                                    <th>Kategori</th>
+                                                    <th>Tanggal Pinjam</th>
+                                                    <th>Tanggal Kembali</th>
+                                                    <th>Status</th>
+                                                    <th>Denda</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {myBorrowingHistory.map((h, idx) => (
+                                                    <tr key={h.id}>
+                                                        <td>{idx + 1}</td>
+                                                        <td><strong>{h.judul}</strong></td>
+                                                        <td>{h.penulis}</td>
+                                                        <td>
+                                                            <span className="badge bg-secondary">{h.kategori || '-'}</span>
+                                                        </td>
+                                                        <td>{new Date(h.tanggal_pinjam).toLocaleDateString('id-ID')}</td>
+                                                        <td>{h.tanggal_kembali ? new Date(h.tanggal_kembali).toLocaleDateString('id-ID') : '-'}</td>
+                                                        <td>
+                                                            {h.status === 'dipinjam' ? (
+                                                                <span className="badge bg-warning text-dark">📤 Dipinjam</span>
+                                                            ) : h.status === 'kembali' ? (
+                                                                <span className="badge bg-success">✅ Dikembalikan</span>
+                                                            ) : h.status === 'diminta_kembali' ? (
+                                                                <span className="badge bg-info">⏳ Diminta Kembali</span>
+                                                            ) : (
+                                                                <span className="badge bg-secondary">{h.status}</span>
+                                                            )}
+                                                        </td>
+                                                        <td>
+                                                            {h.denda > 0 ? (
+                                                                <span className="badge bg-danger">Rp {h.denda.toLocaleString('id-ID')}</span>
+                                                            ) : (
+                                                                <span className="text-muted">-</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                )}
+            </div>
 
             {/* Student Profile Modal */}
             {showStudentProfile && selectedStudent && (
@@ -2500,16 +2500,77 @@ export default function Dashboard() {
                 </div>
             )}
 
-            {/* Daftar Buku untuk Peminjaman (Hanya untuk Siswa) - dengan Tab Navigation */}
+            {/* Student Summary Cards */}
             {user.role === 'siswa' && (
-                <div className="mb-5">
+                <div className="row g-3 mb-4">
+                    <div className="col-md-3">
+                        <div className="card border-0 shadow-sm" style={{backgroundColor: isDark ? '#2d2d2d' : '#e3f2fd', borderLeft: '4px solid #2196F3'}}>
+                            <div className="card-body">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p className="card-text text-muted small mb-2">Sedang Dipinjam</p>
+                                        <h3 className="card-title mb-0">{myBorrowedBooks.length}</h3>
+                                    </div>
+                                    <div style={{fontSize: '2rem'}}>📚</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-md-3">
+                        <div className="card border-0 shadow-sm" style={{backgroundColor: isDark ? '#2d2d2d' : '#f3e5f5', borderLeft: '4px solid #9C27B0'}}>
+                            <div className="card-body">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p className="card-text text-muted small mb-2">Total Transaksi</p>
+                                        <h3 className="card-title mb-0">{myBorrowingHistory.length}</h3>
+                                    </div>
+                                    <div style={{fontSize: '2rem'}}>📊</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-md-3">
+                        <div className="card border-0 shadow-sm" style={{backgroundColor: isDark ? '#2d2d2d' : '#e8f5e9', borderLeft: '4px solid #4CAF50'}}>
+                            <div className="card-body">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p className="card-text text-muted small mb-2">Sudah Dikembalikan</p>
+                                        <h3 className="card-title mb-0">{myBorrowingHistory.filter(h => h.status === 'kembali').length}</h3>
+                                    </div>
+                                    <div style={{fontSize: '2rem'}}>✅</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="col-md-3">
+                        <div className="card border-0 shadow-sm" style={{backgroundColor: isDark ? '#2d2d2d' : '#ffebee', borderLeft: '4px solid #f44336'}}>
+                            <div className="card-body">
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p className="card-text text-muted small mb-2">Total Denda</p>
+                                        <h3 className="card-title mb-0">Rp {myBorrowingHistory.reduce((sum, h) => sum + (h.denda || 0), 0).toLocaleString('id-ID')}</h3>
+                                    </div>
+                                    <div style={{fontSize: '2rem'}}>⚠️</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Student Tabs Section */}
+            {user.role === 'siswa' && (
+                <div>
                     <ul className="nav nav-tabs" role="tablist">
                         <li className="nav-item">
                             <button 
                                 className={`nav-link ${activeTabSiswa === 'katalog' ? 'active' : ''}`}
                                 onClick={() => setActiveTabSiswa('katalog')}
                             >
-                                📚 Daftar Buku
+                                📚 Katalog Buku
                             </button>
                         </li>
                         <li className="nav-item">
@@ -2527,6 +2588,7 @@ export default function Dashboard() {
                                 onClick={() => setActiveTabSiswa('riwayat')}
                             >
                                 📜 Riwayat Peminjaman
+                                <span className="badge bg-info ms-2">{myBorrowingHistory.length}</span>
                             </button>
                         </li>
                     </ul>
@@ -2717,34 +2779,54 @@ export default function Dashboard() {
                                 
                                 {myBorrowedBooks.length === 0 ? (
                                     <div className="alert alert-info">
-                                        Anda belum meminjam buku. Silakan pilih buku dari katalog di atas.
+                                        ℹ️ Anda belum meminjam buku. Silakan pilih buku dari katalog tab di atas.
                                     </div>
                                 ) : (
-                                    <div className="table-responsive">
-                                        <table className="table table-hover">
-                                            <thead>
-                                                <tr>
-                                                    <th>Judul Buku</th>
-                                                    <th>Penulis</th>
-                                                    <th>Tanggal Pinjam</th>
-                                                    <th>Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {myBorrowedBooks.map(b => (
-                                                    <tr key={b.id}>
-                                                        <td><strong>{b.judul}</strong></td>
-                                                        <td>{b.penulis}</td>
-                                                        <td>{new Date(b.tanggal_pinjam).toLocaleDateString('id-ID')}</td>
-                                                        <td>
-                                                            <span className="badge bg-danger">
+                                    <div className="row g-4">
+                                        {myBorrowedBooks.map(book => (
+                                            <div className="col-md-6 col-lg-4" key={book.id}>
+                                                <div className="card h-100 shadow-sm" style={{border: `1px solid ${isDark ? '#444444' : '#dee2e6'}`, borderLeft: '4px solid #ff9800'}}>
+                                                    <div style={{
+                                                        width: '100%',
+                                                        height: '220px',
+                                                        backgroundColor: '#f0f0f0',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        overflow: 'hidden',
+                                                        borderBottom: `1px solid ${isDark ? '#444444' : '#dee2e6'}`
+                                                    }}>
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            width: '100%',
+                                                            height: '100%',
+                                                            backgroundColor: '#e9ecef'
+                                                        }}>
+                                                            <span style={{fontSize: '40px', marginBottom: '8px'}}>📚</span>
+                                                            <span style={{fontSize: '12px', color: '#999'}}>{book.status}</span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="card-body">
+                                                        <h5 className="card-title">{book.judul}</h5>
+                                                        <p className="card-text small text-muted mb-2">
+                                                            <strong>Penulis:</strong> {book.penulis}
+                                                        </p>
+                                                        <p className="card-text small mb-3">
+                                                            <strong>Tanggal Pinjam:</strong> {new Date(book.tanggal_pinjam).toLocaleDateString('id-ID')}
+                                                        </p>
+                                                        <div>
+                                                            <span className="badge bg-warning text-dark w-100" style={{padding: '8px'}}>
                                                                 📤 Sedang Dipinjam
                                                             </span>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
                             </div>
@@ -2782,55 +2864,59 @@ export default function Dashboard() {
                                 
                                 {myBorrowingHistory.length === 0 ? (
                                     <div className="alert alert-info">
-                                        Belum ada riwayat peminjaman.
+                                        ℹ️ Belum ada riwayat peminjaman.
                                     </div>
                                 ) : (
-                                    <div className="table-responsive">
-                                        <table className="table table-hover">
-                                            <thead>
-                                                <tr>
-                                                    <th>Judul Buku</th>
-                                                    <th>Penulis</th>
-                                                    <th>Kategori</th>
-                                                    <th>Tanggal Pinjam</th>
-                                                    <th>Tanggal Kembali</th>
-                                                    <th>Status</th>
-                                                    <th>Denda</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {myBorrowingHistory.map(h => (
-                                                    <tr key={h.id}>
-                                                        <td><strong>{h.judul}</strong></td>
-                                                        <td>{h.penulis}</td>
-                                                        <td>
-                                                            <span className="badge bg-secondary">{h.kategori}</span>
-                                                        </td>
-                                                        <td>{new Date(h.tanggal_pinjam).toLocaleDateString('id-ID')}</td>
-                                                        <td>{h.tanggal_kembali ? new Date(h.tanggal_kembali).toLocaleDateString('id-ID') : '-'}</td>
-                                                        <td>
-                                                            {h.status === 'dipinjam' ? (
-                                                                <span className="badge bg-danger">📤 Dipinjam</span>
-                                                            ) : h.status === 'kembali' ? (
-                                                                <span className="badge bg-success">📥 Dikembalikan</span>
-                                                            ) : h.status === 'diminta_kembali' ? (
-                                                                <span className="badge bg-warning">⏳ Diminta Kembali</span>
-                                                            ) : (
-                                                                <span className="badge bg-secondary">{h.status}</span>
-                                                            )}
-                                                        </td>
-                                                        <td>
-                                                            {h.denda > 0 ? (
-                                                                <span className="badge bg-danger">Rp {h.denda.toLocaleString('id-ID')}</span>
-                                                            ) : (
-                                                                <span className="text-muted">-</span>
-                                                            )}
-                                                        </td>
+                                    <>
+                                        <div className="table-responsive">
+                                            <table className="table table-hover">
+                                                <thead style={{backgroundColor: isDark ? '#333333' : '#f8f9fa'}}>
+                                                    <tr>
+                                                        <th>No</th>
+                                                        <th>Judul Buku</th>
+                                                        <th>Penulis</th>
+                                                        <th>Kategori</th>
+                                                        <th>Tanggal Pinjam</th>
+                                                        <th>Tanggal Kembali</th>
+                                                        <th>Status</th>
+                                                        <th>Denda</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                                </thead>
+                                                <tbody>
+                                                    {myBorrowingHistory.map((h, idx) => (
+                                                        <tr key={h.id}>
+                                                            <td>{idx + 1}</td>
+                                                            <td><strong>{h.judul}</strong></td>
+                                                            <td>{h.penulis}</td>
+                                                            <td>
+                                                                <span className="badge bg-secondary">{h.kategori || '-'}</span>
+                                                            </td>
+                                                            <td>{new Date(h.tanggal_pinjam).toLocaleDateString('id-ID')}</td>
+                                                            <td>{h.tanggal_kembali ? new Date(h.tanggal_kembali).toLocaleDateString('id-ID') : '-'}</td>
+                                                            <td>
+                                                                {h.status === 'dipinjam' ? (
+                                                                    <span className="badge bg-warning text-dark">📤 Dipinjam</span>
+                                                                ) : h.status === 'kembali' ? (
+                                                                    <span className="badge bg-success">✅ Dikembalikan</span>
+                                                                ) : h.status === 'diminta_kembali' ? (
+                                                                    <span className="badge bg-info">⏳ Diminta Kembali</span>
+                                                                ) : (
+                                                                    <span className="badge bg-secondary">{h.status}</span>
+                                                                )}
+                                                            </td>
+                                                            <td>
+                                                                {h.denda > 0 ? (
+                                                                    <span className="badge bg-danger">Rp {h.denda.toLocaleString('id-ID')}</span>
+                                                                ) : (
+                                                                    <span className="text-muted">-</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         )}

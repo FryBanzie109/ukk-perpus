@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { useUser } from '../hooks/useUser';
+import { useUser, triggerUserUpdate } from '../hooks/useUser';
 
 export default function Profile() {
     // Hardcoded lists untuk kelas dan jurusan
@@ -19,6 +19,8 @@ export default function Profile() {
         foto_profil: ''
     });
     const [loading, setLoading] = useState(true);
+    const [borrowedBooks, setBorrowedBooks] = useState([]);
+    const [borrowingHistory, setBorrowingHistory] = useState([]);
 
     useEffect(() => {
         if (!user) {
@@ -32,7 +34,6 @@ export default function Profile() {
         const fetchProfile = async () => {
             try {
                 const res = await axios.get(`http://localhost:5000/profile/${userData.id}`);
-                setUser(res.data);
                 setFormData({
                     nama_lengkap: res.data.nama_lengkap || '',
                     bio: res.data.bio || '',
@@ -42,13 +43,33 @@ export default function Profile() {
                 });
             } catch (err) {
                 console.error('Error fetching profile:', err);
-            } finally {
-                setLoading(false);
             }
         };
 
-        fetchProfile();
-    }, [navigate]);
+        // Fetch borrowed books (currently dipinjam)
+        const fetchBorrowedBooks = async () => {
+            try {
+                const res = await axios.get(`http://localhost:5000/my-borrowed-books/${userData.id}`);
+                setBorrowedBooks(res.data);
+            } catch (err) {
+                console.error('Error fetching borrowed books:', err);
+            }
+        };
+
+        // Fetch borrowing history (semua transaksi)
+        const fetchBorrowingHistory = async () => {
+            try {
+                const res = await axios.get(`http://localhost:5000/my-borrowing-history/${userData.id}`);
+                setBorrowingHistory(res.data);
+            } catch (err) {
+                console.error('Error fetching borrowing history:', err);
+            }
+        };
+
+        Promise.all([fetchProfile(), fetchBorrowedBooks(), fetchBorrowingHistory()]).finally(() => {
+            setLoading(false);
+        });
+    }, [user, navigate]);
 
     const handleImageUpload = (e) => {
         const file = e.target.files[0];
@@ -117,8 +138,7 @@ export default function Profile() {
             // Update localStorage
             const updatedUser = { ...user, ...updateData };
             localStorage.setItem('user', JSON.stringify(updatedUser));
-            
-            setUser(updatedUser);
+            triggerUserUpdate(updatedUser);
             setIsEditing(false);
         } catch (err) {
             alert('Gagal mengupdate profil: ' + err.message);
@@ -379,6 +399,86 @@ export default function Profile() {
                             )}
                         </div>
                     </div>
+
+                    {/* Buku yang Sedang Dipinjam */}
+                    {user.role === 'siswa' && borrowedBooks.length > 0 && (
+                        <div className="card border-0 shadow-sm mt-4">
+                            <div className="card-header bg-info text-white">
+                                <h4 className="mb-0">📚 Buku yang Sedang Dipinjam</h4>
+                            </div>
+                            <div className="card-body">
+                                <div className="table-responsive">
+                                    <table className="table table-hover mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Judul Buku</th>
+                                                <th>Penulis</th>
+                                                <th>Tanggal Pinjam</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {borrowedBooks.map(book => (
+                                                <tr key={book.id}>
+                                                    <td><strong>{book.judul}</strong></td>
+                                                    <td>{book.penulis}</td>
+                                                    <td>{new Date(book.tanggal_pinjam).toLocaleDateString('id-ID')}</td>
+                                                    <td><span className="badge bg-warning">Dipinjam</span></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Riwayat Peminjaman */}
+                    {user.role === 'siswa' && borrowingHistory.length > 0 && (
+                        <div className="card border-0 shadow-sm mt-4">
+                            <div className="card-header bg-success text-white">
+                                <h4 className="mb-0">📖 Riwayat Peminjaman</h4>
+                            </div>
+                            <div className="card-body">
+                                <div className="table-responsive">
+                                    <table className="table table-hover mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Judul Buku</th>
+                                                <th>Penulis</th>
+                                                <th>Tanggal Pinjam</th>
+                                                <th>Tanggal Kembali</th>
+                                                <th>Status</th>
+                                                <th>Denda</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {borrowingHistory.map(transaction => (
+                                                <tr key={transaction.id}>
+                                                    <td><strong>{transaction.judul}</strong></td>
+                                                    <td>{transaction.penulis}</td>
+                                                    <td>{new Date(transaction.tanggal_pinjam).toLocaleDateString('id-ID')}</td>
+                                                    <td>{transaction.tanggal_kembali ? new Date(transaction.tanggal_kembali).toLocaleDateString('id-ID') : '-'}</td>
+                                                    <td>
+                                                        <span className={`badge ${
+                                                            transaction.status === 'dipinjam' ? 'bg-warning' :
+                                                            transaction.status === 'kembali' ? 'bg-success' :
+                                                            transaction.status === 'diminta_kembali' ? 'bg-info' : 'bg-secondary'
+                                                        }`}>
+                                                            {transaction.status === 'dipinjam' ? 'Dipinjam' :
+                                                             transaction.status === 'kembali' ? 'Dikembalikan' :
+                                                             transaction.status === 'diminta_kembali' ? 'Diminta Kembali' : transaction.status}
+                                                        </span>
+                                                    </td>
+                                                    <td>{transaction.denda ? `Rp ${transaction.denda.toLocaleString('id-ID')}` : '-'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

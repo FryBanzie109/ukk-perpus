@@ -2132,7 +2132,7 @@ app.post('/transactions/generate-pdf', async (req, res) => {
 app.post('/forgot-password', async (req, res) => {
     const { username } = req.body;
     try {
-        const [user] = await db.query('SELECT id, username, email FROM users WHERE username = ?', [username]);
+        const [user] = await db.query('SELECT id, username FROM users WHERE username = ?', [username]);
         if (user.length === 0) {
             // Don't reveal if user exists for security
             return res.json({ message: "Jika username terdaftar, link reset password akan dikirim" });
