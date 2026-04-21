@@ -30,7 +30,7 @@ export default function Dashboard() {
     const [students, setStudents] = useState([]);
     const [myBorrowedBooks, setMyBorrowedBooks] = useState([]);
     const [myBorrowingHistory, setMyBorrowingHistory] = useState([]);
-    const [activeTab, setActiveTab] = useState('katalog');
+    const [activeTab, setActiveTab] = useState('daftar_buku');
     const [activeTabSiswa, setActiveTabSiswa] = useState('katalog'); // Tab untuk siswa
     const [chartViewType, setChartViewType] = useState('weekly'); // 'weekly' or 'monthly'
     const [_loading, setLoading] = useState(true);
@@ -58,6 +58,14 @@ export default function Dashboard() {
     const [selectedStudent, setSelectedStudent] = useState(null);
     const [showStudentProfile, setShowStudentProfile] = useState(false);
     const [studentBorrowedBooks, setStudentBorrowedBooks] = useState([]);
+    
+    // Open Library Search States
+    const [openLibSearchQuery, setOpenLibSearchQuery] = useState('');
+    const [openLibResults, setOpenLibResults] = useState([]);
+    const [openLibLoading, setOpenLibLoading] = useState(false);
+    
+    // Form States
+    const [newBook, setNewBook] = useState({ judul: '', penulis: '', penerbit: '', kategori: 'Fiksi', tahun_terbit: '', stok: '', isbn: '', cover_url: '' });
     
     // Late Fees States
     const [lateFees, setLateFees] = useState([]);
@@ -287,6 +295,69 @@ export default function Dashboard() {
         }
     };
 
+    // --- LOGIC TAMBAH BUKU ---
+    const tambahBuku = async () => {
+        if (!newBook.judul.trim() || !newBook.penulis.trim() || !newBook.stok) {
+            alert('Judul, Penulis, dan Stok harus diisi!');
+            return;
+        }
+
+        try {
+            await axios.post('http://localhost:5000/books', newBook);
+            alert('Buku berhasil ditambahkan!');
+            setNewBook({ judul: '', penulis: '', penerbit: '', kategori: 'Fiksi', tahun_terbit: '', stok: '', isbn: '', cover_url: '' });
+            fetchData();
+        } catch (err) {
+            alert('Gagal menambahkan buku: ' + (err.response?.data?.message || err.message));
+        }
+    };
+
+    // --- LOGIC SEARCH OPEN LIBRARY ---
+    const searchOpenLibrary = async () => {
+        if (!openLibSearchQuery.trim()) {
+            alert('Masukkan judul atau penulis buku!');
+            return;
+        }
+
+        try {
+            setOpenLibLoading(true);
+            const query = openLibSearchQuery.trim().replace(/\s+/g, '+');
+            const res = await axios.get(`https://openlibrary.org/search.json?title=${query}&limit=10`);
+            setOpenLibResults(res.data.docs || []);
+        } catch (err) {
+            alert('Gagal mencari buku di Open Library: ' + err.message);
+        } finally {
+            setOpenLibLoading(false);
+        }
+    };
+
+    // --- LOGIC IMPORT FROM OPEN LIBRARY ---
+    const importFromOpenLib = async (book) => {
+        // Generate cover URL from Open Library
+        let coverUrl = '';
+        if (book.cover_id) {
+            coverUrl = `https://covers.openlibrary.org/b/id/${book.cover_id}-M.jpg`;
+        } else if (book.cover_edition_key) {
+            coverUrl = `https://covers.openlibrary.org/b/olid/${book.cover_edition_key}-M.jpg`;
+        }
+
+        const bookData = {
+            judul: book.title || '',
+            penulis: book.author_name?.[0] || 'Unknown',
+            penerbit: book.publisher?.[0] || 'Unknown',
+            tahun_terbit: book.first_publish_year || '',
+            isbn: book.isbn?.[0] || '',
+            kategori: (book.subject_facets?.[0] || book.subject?.[0] || book.classifications_top?.[0] || 'Uncategorized').slice(0, 3).join(', ') || 'Uncategorized',
+            stok: 1,
+            cover_url: coverUrl
+        };
+
+        setNewBook(bookData);
+        setOpenLibResults([]);
+        setOpenLibSearchQuery('');
+        alert('Data buku dimuat. Silakan sesuaikan stok jika diperlukan.');
+    };
+
     // --- LOGIC EDIT & STOK BUKU ---
     const editBuku = async () => {
         if (!editBookData.judul.trim() || !editBookData.penulis.trim()) {
@@ -358,6 +429,25 @@ export default function Dashboard() {
         }
     };
 
+    // --- LOGIC BUKA EDIT MODAL ---
+    const openEditBook = (book) => {
+        setEditBookData(book);
+        _setSelectedBookForStock(book);
+        setShowEditModal(true);
+    };
+
+    // --- LOGIC HAPUS BUKU ---
+    const hapusBuku = async (bookId, judul) => {
+        if (confirm(`Apakah Anda yakin ingin menghapus buku "${judul}"?`)) {
+            try {
+                await axios.delete(`http://localhost:5000/books/${bookId}`);
+                alert('✅ Buku berhasil dihapus!');
+                fetchData();
+            } catch (err) {
+                alert('❌ Gagal menghapus buku: ' + (err.response?.data?.message || err.message));
+            }
+        }
+    };
 
 
 
@@ -1270,7 +1360,7 @@ export default function Dashboard() {
                                                         <p className="card-text small mb-3">
                                                             <strong>Tahun:</strong> {book.tahun_terbit || '-'}
                                                         </p>
-                                                        <div className="d-flex justify-content-between align-items-center">
+                                                        <div className="d-flex justify-content-between align-items-center mb-2">
                                                             <span className="badge bg-primary">{book.stok} stok</span>
                                                             <button 
                                                                 onClick={() => viewBookProfile(book.id)} 
@@ -1279,6 +1369,27 @@ export default function Dashboard() {
                                                                 👁️ Detail
                                                             </button>
                                                         </div>
+
+                                                        {/* Admin Control Buttons */}
+                                                        {user.role === 'admin' && (
+                                                            <div className="d-flex gap-2 mt-2">
+                                                                <button 
+                                                                    onClick={() => openEditBook(book)} 
+                                                                    className="btn btn-sm btn-warning flex-grow-1"
+                                                                    title="Edit buku"
+                                                                >
+                                                                    ✏️ Edit
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => hapusBuku(book.id, book.judul)} 
+                                                                    className="btn btn-sm btn-danger"
+                                                                    title="Hapus buku"
+                                                                >
+                                                                    🗑️
+                                                                </button>
+                                                            </div>
+                                                        )}
+
                                                         {user.role === 'siswa' && (
                                                             <button 
                                                                 onClick={() => pinjamBuku(book.id)} 
@@ -1294,8 +1405,159 @@ export default function Dashboard() {
                                         ))}
                                     </div>
                                 )}
+                                
+                                {/* SECTION: Cari Buku dari Open Library */}
+                                <div className="row g-3 mb-4 mt-4 p-3" style={{backgroundColor: isDark ? '#2d3748' : '#f8f9fa', border: `1px solid ${isDark ? '#444444' : '#dee2e6'}`, borderRadius: '8px'}}>
+                                    <h6 className="mb-3">🌐 Cari Buku dari Open Library</h6>
+                                    <div className="col-md-8">
+                                        <input 
+                                            type="text" 
+                                            className="form-control" 
+                                            placeholder="Cari judul atau penulis..." 
+                                            value={openLibSearchQuery}
+                                            onChange={(e) => setOpenLibSearchQuery(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && searchOpenLibrary()}
+                                        />
+                                    </div>
+                                    <div className="col-md-4">
+                                        <button 
+                                            className="btn btn-primary w-100" 
+                                            onClick={searchOpenLibrary}
+                                            disabled={openLibLoading}
+                                        >
+                                            {openLibLoading ? '🔄 Mencari...' : '🔍 Cari'}
+                                        </button>
+                                    </div>
+
+                                    {openLibResults.length > 0 && (
+                                        <div className="col-12">
+                                            <div className="list-group" style={{maxHeight: '300px', overflowY: 'auto'}}>
+                                                {openLibResults.map((book, idx) => (
+                                                    <button 
+                                                        key={idx} 
+                                                        className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                                        style={{backgroundColor: isDark ? '#3d4956' : '#fff'}}
+                                                    >
+                                                        <div className="text-start">
+                                                            <div className="fw-bold">{book.title}</div>
+                                                            <small className="text-muted">{book.author_name?.[0] || 'Unknown'} ({book.first_publish_year || '-'})</small>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => importFromOpenLib(book)} 
+                                                            className="btn btn-sm btn-success"
+                                                        >
+                                                            ✅ Gunakan
+                                                        </button>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* SECTION: Tambah Buku */}
+                                <div className="row g-3 mb-4 p-3" style={{backgroundColor: isDark ? '#2d3748' : '#f8f9fa', border: `1px solid ${isDark ? '#444444' : '#dee2e6'}`, borderRadius: '8px'}}>
+                                    <h6 className="mb-3">➕ Tambah Buku Baru</h6>
+                                    <div className="col-md-4">
+                                        <input 
+                                            type="text" 
+                                            className="form-control" 
+                                            placeholder="Judul Buku" 
+                                            value={newBook.judul}
+                                            onChange={(e) => setNewBook({...newBook, judul: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="col-md-4">
+                                        <input 
+                                            type="text" 
+                                            className="form-control" 
+                                            placeholder="Penulis" 
+                                            value={newBook.penulis}
+                                            onChange={(e) => setNewBook({...newBook, penulis: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="col-md-4">
+                                        <input 
+                                            type="text" 
+                                            className="form-control" 
+                                            placeholder="Penerbit" 
+                                            value={newBook.penerbit}
+                                            onChange={(e) => setNewBook({...newBook, penerbit: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="col-md-3">
+                                        <select 
+                                            className="form-select" 
+                                            value={newBook.kategori}
+                                            onChange={(e) => setNewBook({...newBook, kategori: e.target.value})}
+                                        >
+                                            {DAFTAR_KATEGORI.map(kat => (
+                                                <option key={kat} value={kat}>{kat}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="col-md-3">
+                                        <input 
+                                            type="number" 
+                                            className="form-control" 
+                                            placeholder="Tahun Terbit" 
+                                            value={newBook.tahun_terbit}
+                                            onChange={(e) => setNewBook({...newBook, tahun_terbit: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="col-md-2">
+                                        <input 
+                                            type="number" 
+                                            className="form-control" 
+                                            placeholder="Stok" 
+                                            value={newBook.stok}
+                                            onChange={(e) => setNewBook({...newBook, stok: e.target.value})}
+                                            min="1"
+                                        />
+                                    </div>
+                                    <div className="col-md-3">
+                                        <input 
+                                            type="text" 
+                                            className="form-control" 
+                                            placeholder="ISBN (opsional)" 
+                                            value={newBook.isbn}
+                                            onChange={(e) => setNewBook({...newBook, isbn: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="col-md-4">
+                                        <input 
+                                            type="text" 
+                                            className="form-control" 
+                                            placeholder="Cover URL (opsional)" 
+                                            value={newBook.cover_url}
+                                            onChange={(e) => setNewBook({...newBook, cover_url: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="col-md-2">
+                                        {newBook.cover_url && (
+                                            <img 
+                                                src={newBook.cover_url} 
+                                                alt="Cover preview" 
+                                                style={{maxWidth: '100%', maxHeight: '120px', borderRadius: '4px', objectFit: 'cover'}}
+                                                onError={(e) => {
+                                                    e.target.style.display = 'none';
+                                                }}
+                                            />
+                                        )}
+                                    </div>
+                                    <div className="col-md-12"></div>
+                                    <div className="col-md-3">
+                                        <button 
+                                            className="btn btn-success w-100" 
+                                            onClick={tambahBuku}
+                                        >
+                                            ➕ Tambah Buku
+                                        </button>
+                                    </div>
+                                </div>
                             </>
                         )}
+
                         {/* Manajemen Siswa */}
                         {activeTab === 'students' && (
                             <div className="card-body">
@@ -2480,6 +2742,17 @@ export default function Dashboard() {
                                 </div>
                             </div>
                             <div className="modal-footer">
+                                <button 
+                                    type="button" 
+                                    className="btn btn-danger" 
+                                    onClick={() => {
+                                        setShowEditModal(false);
+                                        hapusBuku(editBookData.id, editBookData.judul);
+                                    }}
+                                    title="Hapus buku secara permanen"
+                                >
+                                    🗑️ Hapus Buku
+                                </button>
                                 <button 
                                     type="button" 
                                     className="btn btn-secondary" 
